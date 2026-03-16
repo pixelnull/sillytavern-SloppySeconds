@@ -67,6 +67,7 @@ const defaultSettings = {
     customPatterns: '',             // Newline-separated textarea
 
     // Behavior
+    scanDepth: 10,                  // Number of recent messages to include as context
     systemPrompt: '',               // Empty = default
     debugMode: false,
 };
@@ -237,11 +238,36 @@ async function callViaProxy(systemPrompt, userMessage) {
 }
 
 /**
+ * Build recent chat context for the AI (excluding the target message).
+ * @param {number} targetMessageId - The message being analyzed
+ * @returns {string} Formatted chat context
+ */
+function buildChatContext(targetMessageId) {
+    const settings = getSettings();
+    const depth = Math.max(1, Math.min(settings.scanDepth || 10, 50));
+
+    const startIdx = Math.max(0, targetMessageId - depth);
+    const lines = [];
+
+    for (let i = startIdx; i < targetMessageId; i++) {
+        const msg = chat[i];
+        if (!msg) continue;
+        const speaker = msg.is_user ? 'User' : (msg.name || name2);
+        // Truncate long messages to avoid blowing the context
+        const text = msg.mes.length > 1000 ? msg.mes.substring(0, 1000) + '...' : msg.mes;
+        lines.push(`[${speaker}]: ${text}`);
+    }
+
+    return lines.join('\n\n');
+}
+
+/**
  * Analyze prose text for slop via the configured connection mode.
  * @param {string} proseText - The AI-generated text to analyze
+ * @param {number} [messageId] - The message ID (for building chat context)
  * @returns {Promise<{findings: Array, newPatterns: Array, summary: string}>}
  */
-async function analyzeText(proseText) {
+async function analyzeText(proseText, messageId) {
     const settings = getSettings();
     const systemPrompt = settings.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
 
@@ -249,7 +275,16 @@ async function analyzeText(proseText) {
     const allPatterns = getMergedPatterns();
     const patternList = allPatterns.map(p => `- ${p}`).join('\n');
 
-    const userMessage = `## Slop Patterns to Check\n${patternList}\n\n## Text to Evaluate\n${proseText}`;
+    // Build context section
+    let contextSection = '';
+    if (messageId !== undefined && messageId > 0) {
+        const chatContext = buildChatContext(messageId);
+        if (chatContext) {
+            contextSection = `## Recent Chat Context (for tone and repetition reference — do NOT analyze this, only analyze the Target Message below)\n${chatContext}\n\n`;
+        }
+    }
+
+    const userMessage = `## Slop Patterns to Check\n${patternList}\n\n${contextSection}## Target Message to Evaluate\n${proseText}`;
 
     if (settings.connectionMode === 'profile') {
         // Profile mode — parse response client-side
@@ -485,7 +520,7 @@ async function refineMessage(messageId) {
         }
 
         // Call AI
-        const result = await analyzeText(originalText);
+        const result = await analyzeText(originalText, messageId);
         sessionStats.messagesProcessed++;
 
         if (!result.findings || result.findings.length === 0) {
@@ -684,6 +719,7 @@ function loadSettingsUI() {
     $('#ss_obsidian_api_key').val(s.obsidianApiKey);
     $('#ss_pattern_file').val(s.patternFile);
     $('#ss_custom_patterns').val(s.customPatterns);
+    $('#ss_scan_depth').val(s.scanDepth);
     $('#ss_system_prompt').val(s.systemPrompt);
     $('#ss_debug_mode').prop('checked', s.debugMode);
 
@@ -746,6 +782,7 @@ function bindSettingsEvents() {
         '#ss_thinking_budget': 'thinkingBudget',
         '#ss_timeout': 'timeout',
         '#ss_obsidian_port': 'obsidianPort',
+        '#ss_scan_depth': 'scanDepth',
     };
     for (const [selector, key] of Object.entries(numFields)) {
         $(selector).on('input', function () {
@@ -861,14 +898,13 @@ async function testObsidianConnection() {
 
 function registerSlashCommands() {
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'refine',
+        name: 'ss-refine',
         callback: async () => {
             const settings = getSettings();
             if (!settings.enabled) {
                 toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
                 return '';
             }
-            // Find last AI message
             for (let i = chat.length - 1; i >= 0; i--) {
                 if (!chat[i].is_user) {
                     await refineMessage(i);
@@ -883,9 +919,68 @@ function registerSlashCommands() {
     }));
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'refine-undo',
+        name: 'ss-detect',
         callback: async () => {
-            // Find last refined message
+            const settings = getSettings();
+            if (!settings.enabled) {
+                toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
+                return '';
+            }
+            // Find last AI message
+            let targetId = -1;
+            for (let i = chat.length - 1; i >= 0; i--) {
+                if (!chat[i].is_user) { targetId = i; break; }
+            }
+            if (targetId < 0) {
+                toastr.info('No AI message found', 'SloppySeconds');
+                return '';
+            }
+
+            toastr.info('Analyzing for slop...', 'SloppySeconds');
+
+            // Load Obsidian patterns if needed
+            if (settings.obsidianEnabled && !obsidianPatternsLoaded) {
+                await loadObsidianPatterns();
+            }
+
+            try {
+                const result = await analyzeText(chat[targetId].mes, targetId);
+
+                if (!result.findings || result.findings.length === 0) {
+                    toastr.success('No slop detected — message is clean!', 'SloppySeconds');
+                    return 'Clean';
+                }
+
+                let html = `<h3>SloppySeconds — ${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)</h3>`;
+                html += `<p><em>${escapeHtml(result.summary)}</em></p><hr>`;
+
+                for (const finding of result.findings) {
+                    html += `<div class="ss_finding">`;
+                    html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}</div>`;
+                    html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
+                    html += `<div class="ss_finding_replacement"><strong>Suggestion:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
+                    html += `</div><hr>`;
+                }
+
+                if (result.newPatterns && result.newPatterns.length > 0) {
+                    html += `<h4>New patterns discovered:</h4>`;
+                    html += result.newPatterns.map(p => `<div>• ${escapeHtml(p)}</div>`).join('');
+                }
+
+                callGenericPopup(html, POPUP_TYPE.TEXT, '', { wide: true });
+                return `Detected ${result.findings.length} findings`;
+            } catch (err) {
+                toastr.warning(`Detection failed: ${err.message}`, 'SloppySeconds');
+                return '';
+            }
+        },
+        helpString: 'Detect slop in the last AI message without applying changes. Shows findings in a popup.',
+        returns: 'Detection result',
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'ss-undo',
+        callback: async () => {
             for (let i = chat.length - 1; i >= 0; i--) {
                 if (chat[i]?.extra?.sloppy_seconds?.original) {
                     await undoRefinement(i);
@@ -900,7 +995,7 @@ function registerSlashCommands() {
     }));
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'refine-status',
+        name: 'ss-status',
         callback: async () => {
             const allPatterns = getMergedPatterns();
             const html = `
@@ -922,7 +1017,7 @@ function registerSlashCommands() {
     }));
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'refine-patterns',
+        name: 'ss-patterns',
         callback: async () => {
             const allPatterns = getMergedPatterns();
             const html = `
