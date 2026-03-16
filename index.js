@@ -18,7 +18,7 @@ import { escapeHtml } from '../../../utils.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 
 const MODULE_NAME = 'sloppy_seconds';
-const PLUGIN_BASE = '/api/plugins/SloppySeconds';
+const PLUGIN_BASE = '/api/plugins/sloppy-seconds';
 
 // ============================================================================
 // Default Settings
@@ -808,6 +808,11 @@ async function testProxyConnection() {
             }),
         });
 
+        if (!response.ok) {
+            statusEl.text(`Server plugin not loaded (HTTP ${response.status}). Restart SillyTavern.`).css('color', '#f44336');
+            return;
+        }
+
         const data = await response.json();
         if (data.ok) {
             statusEl.text('Connected!').css('color', '#4caf50');
@@ -833,6 +838,11 @@ async function testObsidianConnection() {
                 apiKey: settings.obsidianApiKey,
             }),
         });
+
+        if (!response.ok) {
+            statusEl.text(`Server plugin not loaded (HTTP ${response.status}). Restart SillyTavern.`).css('color', '#f44336');
+            return;
+        }
 
         const data = await response.json();
         if (data.ok) {

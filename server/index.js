@@ -4,7 +4,7 @@ const path = require('node:path');
 const { obsidianRequest, encodeVaultPath } = require('./core/obsidian');
 
 const info = {
-    id: 'SloppySeconds',
+    id: 'sloppy-seconds',
     name: 'SloppySeconds',
     description: 'Post-generation prose refiner with AI slop detection via Claude Sonnet with extended thinking',
 };
