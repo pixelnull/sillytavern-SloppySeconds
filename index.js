@@ -1277,8 +1277,12 @@ jQuery(async function () {
         registerSlashCommands();
 
         // Post-generation hook: auto-refine
-        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (messageId) => {
+        const autoRefineHandler = async (messageId, source) => {
             const settings = getSettings();
+            if (settings.debugMode) {
+                console.log(`[SloppySeconds] Auto-refine event (${source}) for messageId:`, messageId,
+                    { enabled: settings.enabled, autoRefine: settings.autoRefine, processingMessageId });
+            }
             if (!settings.enabled || !settings.autoRefine) return;
             if (processingMessageId !== null) return;
 
@@ -1287,6 +1291,20 @@ jQuery(async function () {
             if (message.extra?.sloppy_seconds) return; // Already refined
 
             await refineMessage(messageId);
+        };
+
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
+            autoRefineHandler(messageId, 'CHARACTER_MESSAGE_RENDERED');
+        });
+
+        // Fallback: GENERATION_ENDED fires when the stop button is hidden
+        // (covers streaming swipes/continues where CHARACTER_MESSAGE_RENDERED
+        // may be skipped on error paths).
+        eventSource.on(event_types.GENERATION_ENDED, () => {
+            const lastIdx = chat.length - 1;
+            if (lastIdx >= 0 && !chat[lastIdx]?.is_user) {
+                autoRefineHandler(lastIdx, 'GENERATION_ENDED');
+            }
         });
 
         // Re-inject badges on chat load
