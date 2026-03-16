@@ -202,7 +202,8 @@ async function callViaProfile(systemPrompt, userMessage, maxTokens, timeout) {
 
         return {
             text: result.content || '',
-            usage: { input_tokens: 0, output_tokens: 0 },
+            // CMRS extractData mode doesn't expose usage; check for raw response shape
+            usage: result.usage || { input_tokens: 0, output_tokens: 0 },
         };
     } finally {
         clearTimeout(timer);
@@ -233,7 +234,8 @@ async function callViaProxy(systemPrompt, userMessage) {
     });
 
     if (!response.ok) {
-        throw new Error(`Server returned HTTP ${response.status}`);
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Server returned HTTP ${response.status}: ${errBody.substring(0, 200)}`);
     }
 
     return await response.json();
@@ -392,7 +394,7 @@ async function loadObsidianPatterns() {
         for (const line of lines) {
             const match = line.match(/^-\s+(.+?)(?:\s+\(discovered .+\))?$/);
             if (match) {
-                patterns.push(match[1].trim());
+                patterns.push(match[1].trim().toLowerCase());
             }
         }
 
@@ -432,8 +434,13 @@ async function appendObsidianPatterns(newPatterns) {
 
         if (readData.ok && readData.content) {
             // File exists — deduplicate and append
-            const existing = readData.content.toLowerCase();
-            const toAdd = newPatterns.filter(p => !existing.includes(p.toLowerCase()));
+            const existingSet = new Set(
+                readData.content.split('\n')
+                    .map(l => l.match(/^-\s+(.+?)(?:\s+\(discovered .+\))?$/))
+                    .filter(Boolean)
+                    .map(m => m[1].trim().toLowerCase()),
+            );
+            const toAdd = newPatterns.filter(p => !existingSet.has(p.toLowerCase()));
             if (toAdd.length === 0) return;
 
             const newLines = toAdd.map(p => `- ${p} (discovered ${today})`).join('\n');
@@ -539,8 +546,13 @@ async function seedObsidianPatterns() {
 
         if (readData.ok && readData.content) {
             // File exists — only add patterns not already present
-            const existing = readData.content.toLowerCase();
-            const toAdd = discoveredPatterns.filter(p => !existing.includes(p.toLowerCase()));
+            const existingSet = new Set(
+                readData.content.split('\n')
+                    .map(l => l.match(/^-\s+(.+?)(?:\s+\(discovered .+\))?$/))
+                    .filter(Boolean)
+                    .map(m => m[1].trim().toLowerCase()),
+            );
+            const toAdd = discoveredPatterns.filter(p => !existingSet.has(p.toLowerCase()));
 
             if (toAdd.length === 0) {
                 toastr.info('All patterns already exist in the file', 'SloppySeconds');
@@ -608,7 +620,7 @@ async function seedObsidianPatterns() {
 async function refineMessage(messageId) {
     const settings = getSettings();
     const message = chat[messageId];
-    if (!message || message.is_user) return;
+    if (!message || message.is_user || message.is_system) return;
 
     // Guard: already processing
     if (processingMessageId !== null) {
@@ -653,19 +665,28 @@ async function refineMessage(messageId) {
             return;
         }
 
-        // Apply replacements
+        // Apply replacements — locate all positions first, then apply in
+        // reverse order so earlier replacements don't shift later indices.
         let text = originalText;
         let appliedCount = 0;
 
+        const located = [];
         for (const finding of result.findings) {
             if (!finding.original || !finding.replacement) continue;
             const idx = text.indexOf(finding.original);
             if (idx !== -1) {
-                text = text.substring(0, idx) + finding.replacement + text.substring(idx + finding.original.length);
-                appliedCount++;
+                located.push({ idx, finding });
             } else if (settings.debugMode) {
                 console.warn(`[SloppySeconds] Finding not found in text: "${finding.original.substring(0, 50)}..."`);
             }
+        }
+
+        // Sort by position descending so replacements don't shift each other
+        located.sort((a, b) => b.idx - a.idx);
+
+        for (const { idx, finding } of located) {
+            text = text.substring(0, idx) + finding.replacement + text.substring(idx + finding.original.length);
+            appliedCount++;
         }
 
         if (appliedCount === 0) {
@@ -771,7 +792,6 @@ function showResultBadge(messageId, fixCount) {
 
     if (fixCount > 0) {
         const badge = $(`<div class="ss_result_badge ss_has_fixes" title="Click to view changes">${fixCount} fix${fixCount !== 1 ? 'es' : ''}</div>`);
-        badge.on('click', () => showFindingsPopup(messageId));
         mesEl.find('.mes_buttons').append(badge);
     } else {
         mesEl.find('.mes_buttons').append('<div class="ss_result_badge ss_clean" title="No slop found">clean</div>');
@@ -898,7 +918,8 @@ function bindSettingsEvents() {
     };
     for (const [selector, key] of Object.entries(numFields)) {
         $(selector).on('input', function () {
-            getSettings()[key] = parseInt($(this).val(), 10) || 0;
+            const parsed = parseInt($(this).val(), 10);
+            getSettings()[key] = isNaN(parsed) ? defaultSettings[key] : parsed;
             saveSettingsDebounced();
         });
     }
@@ -1082,7 +1103,7 @@ function registerSlashCommands() {
                 return '';
             }
             for (let i = chat.length - 1; i >= 0; i--) {
-                if (!chat[i].is_user) {
+                if (!chat[i].is_user && !chat[i].is_system) {
                     await refineMessage(i);
                     return `Refined message ${i}`;
                 }
@@ -1105,7 +1126,7 @@ function registerSlashCommands() {
             // Find last AI message
             let targetId = -1;
             for (let i = chat.length - 1; i >= 0; i--) {
-                if (!chat[i].is_user) { targetId = i; break; }
+                if (!chat[i].is_user && !chat[i].is_system) { targetId = i; break; }
             }
             if (targetId < 0) {
                 toastr.info('No AI message found', 'SloppySeconds');
