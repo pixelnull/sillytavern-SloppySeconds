@@ -4,7 +4,7 @@ import {
     saveChatConditional,
     chat,
     name2,
-    messageFormatting,
+    updateMessageBlock,
 } from '../../../../script.js';
 import {
     extension_settings,
@@ -67,7 +67,7 @@ const defaultSettings = {
     customPatterns: '',             // Newline-separated textarea
 
     // Behavior
-    scanDepth: 10,                  // Number of recent messages to include as context
+    contextAiMessages: 5,           // Number of prior AI messages to include as context (1-20)
     systemPrompt: '',               // Empty = default
     debugMode: false,
 };
@@ -93,13 +93,15 @@ Slop is machine-generated prose that sounds generic, repetitive, or artificially
 
 **4. Echo/repetition** — The same word, phrase structure, or sentence pattern used multiple times in close proximity. Especially: starting consecutive sentences the same way, repeating a character's name excessively, or recycling the same descriptor.
 
-**5. Tell-not-show emotional labels** — Naming the emotion instead of showing it:
+**5. Cross-message repetition** — Phrases, constructions, or metaphor vehicles repeated across multiple AI messages. You will receive prior AI messages as context — compare them against the target message. Flag any phrase or structural pattern that appears in BOTH the context messages AND the target. This is the most important category because it reveals the AI's habitual tics.
+
+**6. Tell-not-show emotional labels** — Naming the emotion instead of showing it:
 "she felt a surge of anger", "fear gripped him", "a wave of sadness washed over", "determination filled her eyes"
 
-**6. AI-signature constructions** — Patterns that specifically mark text as AI-generated:
+**7. AI-signature constructions** — Patterns that specifically mark text as AI-generated:
 "[noun] that spoke of [abstract]", "[action], [emotion] evident in every [noun]", "the [noun] hung heavy", "[verb]ing with an intensity that..."
 
-You will receive a prose passage and a list of known slop patterns (which may include patterns beyond these categories).
+You will receive a prose passage, a list of known slop patterns, and recent AI messages as context for cross-message comparison.
 
 ## Rules
 - Only flag text that genuinely degrades the prose. Not every metaphor is bad — flag the DEAD ones.
@@ -238,27 +240,25 @@ async function callViaProxy(systemPrompt, userMessage) {
 }
 
 /**
- * Build recent chat context for the AI (excluding the target message).
+ * Build recent chat context from prior AI messages (for cross-message repetition detection).
+ * Collects only AI messages, untruncated, walking backwards from the target.
  * @param {number} targetMessageId - The message being analyzed
  * @returns {string} Formatted chat context
  */
 function buildChatContext(targetMessageId) {
     const settings = getSettings();
-    const depth = Math.max(1, Math.min(settings.scanDepth || 10, 50));
+    const count = Math.max(1, Math.min(settings.contextAiMessages || 5, 20));
 
-    const startIdx = Math.max(0, targetMessageId - depth);
-    const lines = [];
-
-    for (let i = startIdx; i < targetMessageId; i++) {
+    const aiMessages = [];
+    for (let i = targetMessageId - 1; i >= 0 && aiMessages.length < count; i--) {
         const msg = chat[i];
-        if (!msg) continue;
-        const speaker = msg.is_user ? 'User' : (msg.name || name2);
-        // Truncate long messages to avoid blowing the context
-        const text = msg.mes.length > 1000 ? msg.mes.substring(0, 1000) + '...' : msg.mes;
-        lines.push(`[${speaker}]: ${text}`);
+        if (!msg || msg.is_user || msg.is_system) continue;
+        aiMessages.push(`[${msg.name || name2} — message ${i}]:\n${msg.mes}`);
     }
 
-    return lines.join('\n\n');
+    // Reverse so oldest is first (chronological order)
+    aiMessages.reverse();
+    return aiMessages.join('\n\n---\n\n');
 }
 
 /**
@@ -478,6 +478,125 @@ async function appendObsidianPatterns(newPatterns) {
     }
 }
 
+/**
+ * Seed the Obsidian pattern file with discovered patterns (from chat analysis).
+ * Creates the file if it doesn't exist, preserves existing content if it does.
+ */
+async function seedObsidianPatterns() {
+    const settings = getSettings();
+    if (!settings.obsidianEnabled) {
+        toastr.warning('Enable Obsidian integration first', 'SloppySeconds');
+        return;
+    }
+
+    const discoveredPatterns = [
+        // Structural Templates
+        'the particular X of someone who Y',
+        'the way X does/moves Y',
+        'not X exactly, but Y',
+        'something between X and Y',
+        // Dead Metaphors (Pauses/Silence)
+        'the silence stretched',
+        'the word landed',
+        'the question landed',
+        'the room settled',
+        'the hallway settled',
+        'sat in the air',
+        // Emotional Telling
+        'caught it',
+        'registered',
+        'read the room',
+        'something moved behind her eyes',
+        'the body\'s delayed invoice',
+        // Architecture Metaphor Overuse
+        'the architecture of',
+        'load-bearing',
+        'two buildings by the same architect',
+        // Character-Specific Tics
+        'the ceremony taught her',
+        'the ceremony couldn\'t reach',
+        'ceremony as emotional processing',
+        // Blood/Feeding Clichés
+        'blood catching light like',
+        'blood came away in sheets',
+        // Nautical Empire Metaphor
+        'the ship was righting',
+        'the ship was listing',
+    ];
+
+    try {
+        // Check if file already exists
+        const readResponse = await fetch(`${PLUGIN_BASE}/read-patterns`, {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                port: settings.obsidianPort,
+                apiKey: settings.obsidianApiKey,
+                filename: settings.patternFile,
+            }),
+        });
+        const readData = await readResponse.json();
+
+        if (readData.ok && readData.content) {
+            // File exists — only add patterns not already present
+            const existing = readData.content.toLowerCase();
+            const toAdd = discoveredPatterns.filter(p => !existing.includes(p.toLowerCase()));
+
+            if (toAdd.length === 0) {
+                toastr.info('All patterns already exist in the file', 'SloppySeconds');
+                return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            const newLines = toAdd.map(p => `- ${p} (discovered ${today})`).join('\n');
+            let content;
+
+            if (readData.content.includes('## AI-Discovered')) {
+                content = readData.content.trimEnd() + '\n' + newLines + '\n';
+            } else {
+                content = readData.content.trimEnd() + '\n\n## AI-Discovered\n' + newLines + '\n';
+            }
+
+            await fetch(`${PLUGIN_BASE}/write-patterns`, {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    port: settings.obsidianPort,
+                    apiKey: settings.obsidianApiKey,
+                    filename: settings.patternFile,
+                    content: content,
+                }),
+            });
+
+            toastr.success(`Added ${toAdd.length} new patterns to vault`, 'SloppySeconds');
+        } else {
+            // File doesn't exist — create it
+            const today = new Date().toISOString().split('T')[0];
+            const patternLines = discoveredPatterns.map(p => `- ${p}`).join('\n');
+            const content = `---\ntags:\n  - sloppy-seconds\n  - sloppy-seconds/patterns\nupdated: ${today}\n---\n# Slop Patterns\n\n## Discovered\n${patternLines}\n`;
+
+            await fetch(`${PLUGIN_BASE}/write-patterns`, {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    port: settings.obsidianPort,
+                    apiKey: settings.obsidianApiKey,
+                    filename: settings.patternFile,
+                    content: content,
+                }),
+            });
+
+            toastr.success(`Created pattern file with ${discoveredPatterns.length} patterns`, 'SloppySeconds');
+        }
+
+        // Reload patterns into cache
+        obsidianPatternsLoaded = false;
+        await loadObsidianPatterns();
+    } catch (err) {
+        toastr.error(`Failed to seed patterns: ${err.message}`, 'SloppySeconds');
+    }
+}
+
 // ============================================================================
 // Refinement Pipeline
 // ============================================================================
@@ -571,12 +690,8 @@ async function refineMessage(messageId) {
 
         message.mes = text;
 
-        // Re-render
-        const mesBlock = $(`.mes[mesid="${messageId}"] .mes_text`);
-        if (mesBlock.length) {
-            mesBlock.html(messageFormatting(text, name2, false, false, messageId));
-        }
-
+        // Re-render using ST's standard message update
+        updateMessageBlock(messageId, message);
         await saveChatConditional();
 
         sessionStats.totalFindings += appliedCount;
@@ -619,11 +734,8 @@ async function undoRefinement(messageId) {
     message.mes = message.extra.sloppy_seconds.original;
     delete message.extra.sloppy_seconds;
 
-    // Re-render
-    const mesBlock = $(`.mes[mesid="${messageId}"] .mes_text`);
-    if (mesBlock.length) {
-        mesBlock.html(messageFormatting(message.mes, name2, false, false, messageId));
-    }
+    // Re-render using ST's standard message update
+    updateMessageBlock(messageId, message);
 
     // Remove badge
     $(`.mes[mesid="${messageId}"] .ss_result_badge`).remove();
@@ -719,7 +831,7 @@ function loadSettingsUI() {
     $('#ss_obsidian_api_key').val(s.obsidianApiKey);
     $('#ss_pattern_file').val(s.patternFile);
     $('#ss_custom_patterns').val(s.customPatterns);
-    $('#ss_scan_depth').val(s.scanDepth);
+    $('#ss_context_ai_messages').val(s.contextAiMessages);
     $('#ss_system_prompt').val(s.systemPrompt);
     $('#ss_debug_mode').prop('checked', s.debugMode);
 
@@ -782,7 +894,7 @@ function bindSettingsEvents() {
         '#ss_thinking_budget': 'thinkingBudget',
         '#ss_timeout': 'timeout',
         '#ss_obsidian_port': 'obsidianPort',
-        '#ss_scan_depth': 'scanDepth',
+        '#ss_context_ai_messages': 'contextAiMessages',
     };
     for (const [selector, key] of Object.entries(numFields)) {
         $(selector).on('input', function () {
@@ -794,6 +906,70 @@ function bindSettingsEvents() {
     // Test buttons
     $('#ss_test_proxy').on('click', testProxyConnection);
     $('#ss_test_obsidian').on('click', testObsidianConnection);
+    $('#ss_seed_patterns').on('click', seedObsidianPatterns);
+
+    // Analyze button
+    $('#ss_analyze_btn').on('click', async function () {
+        const btn = $(this);
+        if (btn.hasClass('disabled')) return;
+
+        const settings = getSettings();
+        if (!settings.enabled) {
+            toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
+            return;
+        }
+
+        // Find last AI message
+        let targetId = -1;
+        for (let i = chat.length - 1; i >= 0; i--) {
+            if (!chat[i].is_user && !chat[i].is_system) { targetId = i; break; }
+        }
+        if (targetId < 0) {
+            toastr.info('No AI message found', 'SloppySeconds');
+            return;
+        }
+
+        btn.addClass('disabled');
+        btn.find('span').text('Analyzing...');
+        btn.find('i').removeClass('fa-magnifying-glass').addClass('fa-spinner fa-spin');
+
+        try {
+            if (settings.obsidianEnabled && !obsidianPatternsLoaded) {
+                await loadObsidianPatterns();
+            }
+
+            const result = await analyzeText(chat[targetId].mes, targetId);
+
+            if (!result.findings || result.findings.length === 0) {
+                toastr.success('No slop detected — message is clean!', 'SloppySeconds');
+                return;
+            }
+
+            let html = `<h3>SloppySeconds — ${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)</h3>`;
+            html += `<p><em>${escapeHtml(result.summary)}</em></p><hr>`;
+
+            for (const finding of result.findings) {
+                html += `<div class="ss_finding">`;
+                html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}</div>`;
+                html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
+                html += `<div class="ss_finding_replacement"><strong>Suggestion:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
+                html += `</div><hr>`;
+            }
+
+            if (result.newPatterns && result.newPatterns.length > 0) {
+                html += `<h4>New patterns discovered:</h4>`;
+                html += result.newPatterns.map(p => `<div>• ${escapeHtml(p)}</div>`).join('');
+            }
+
+            callGenericPopup(html, POPUP_TYPE.TEXT, '', { wide: true });
+        } catch (err) {
+            toastr.warning(`Detection failed: ${err.message}`, 'SloppySeconds');
+        } finally {
+            btn.removeClass('disabled');
+            btn.find('span').text('Analyze Last Message');
+            btn.find('i').removeClass('fa-spinner fa-spin').addClass('fa-magnifying-glass');
+        }
+    });
 }
 
 function updateConnectionVisibility() {

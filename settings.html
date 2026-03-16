@@ -14,6 +14,13 @@
                 <span>Auto-refine on every message</span>
             </label>
 
+            <div class="flex-container" style="margin-top: 8px;">
+                <div id="ss_analyze_btn" class="menu_button menu_button_icon" title="Analyze the last AI message for slop patterns without applying changes.">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <span>Analyze Last Message</span>
+                </div>
+            </div>
+
             <hr>
             <h4>AI Connection</h4>
 
@@ -129,6 +136,10 @@
                             <i class="fa-solid fa-plug"></i>
                             <span>Test Obsidian</span>
                         </div>
+                        <div id="ss_seed_patterns" class="menu_button menu_button_icon" title="Write discovered slop patterns to the Obsidian vault file. Creates the file if it doesn't exist.">
+                            <i class="fa-solid fa-seedling"></i>
+                            <span>Seed Patterns</span>
+                        </div>
                         <span id="ss_obsidian_status" class="ss_status"></span>
                     </div>
                 </div>
@@ -165,11 +176,11 @@
                 </div>
                 <div class="inline-drawer-content">
                     <div class="flex-container">
-                        <div class="flex1" title="Number of recent chat messages to include as context for tone matching and repetition detection. Higher = better detection but more tokens.">
-                            <label for="ss_scan_depth">
-                                <small>Context Depth (messages)</small>
+                        <div class="flex1" title="Number of prior AI messages to include as context for cross-message repetition detection. Higher = better detection but more tokens. AI messages are sent untruncated.">
+                            <label for="ss_context_ai_messages">
+                                <small>Context AI Messages</small>
                             </label>
-                            <input id="ss_scan_depth" type="number" class="text_pole" min="1" max="50" />
+                            <input id="ss_context_ai_messages" type="number" class="text_pole" min="1" max="20" />
                         </div>
                     </div>
                     <div class="flex-container flexFlowColumn">
