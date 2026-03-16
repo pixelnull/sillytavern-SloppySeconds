@@ -68,6 +68,7 @@ const defaultSettings = {
 
     // Behavior
     contextAiMessages: 5,           // Number of prior AI messages to include as context (1-20)
+    showCleanBadges: true,          // Show "clean" badges on messages with no slop
     systemPrompt: '',               // Empty = default
     debugMode: false,
 };
@@ -161,6 +162,58 @@ let obsidianPatterns = [];
 let obsidianPatternsLoaded = false;
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Find the last AI message matching an optional predicate.
+ * @param {function} [predicate] - Extra filter (receives message, index). Defaults to any AI message.
+ * @returns {{index: number, message: object}|null}
+ */
+function findLastAiMessage(predicate) {
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const msg = chat[i];
+        if (msg && !msg.is_user && !msg.is_system) {
+            if (!predicate || predicate(msg, i)) return { index: i, message: msg };
+        }
+    }
+    return null;
+}
+
+/**
+ * Build findings popup HTML.
+ * @param {string} title - Popup heading text
+ * @param {Array} findings - Array of finding objects
+ * @param {string} summary - Summary text
+ * @param {Object} [options]
+ * @param {string[]} [options.newPatterns] - Newly discovered patterns to display
+ * @param {boolean} [options.showAppliedStatus=false] - Show applied/unapplied markers
+ * @returns {string} HTML string
+ */
+function buildFindingsHtml(title, findings, summary, options = {}) {
+    let html = `<h3>SloppySeconds — ${escapeHtml(title)}</h3>`;
+    html += `<p><em>${escapeHtml(summary)}</em></p><hr>`;
+
+    for (const finding of findings) {
+        const notApplied = options.showAppliedStatus && finding._applied === false;
+        html += `<div class="ss_finding"${notApplied ? ' style="opacity: 0.5;"' : ''}>`;
+        html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}`;
+        if (notApplied) html += ' <em>(not found in text)</em>';
+        html += `</div>`;
+        html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
+        html += `<div class="ss_finding_replacement"><strong>${notApplied ? 'Suggestion' : 'Replacement'}:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
+        html += `</div><hr>`;
+    }
+
+    if (options.newPatterns && options.newPatterns.length > 0) {
+        html += `<h4>New patterns discovered:</h4>`;
+        html += options.newPatterns.map(p => `<div>• ${escapeHtml(p)}</div>`).join('');
+    }
+
+    return html;
+}
+
+// ============================================================================
 // AI Connection
 // ============================================================================
 
@@ -186,6 +239,12 @@ async function callViaProfile(systemPrompt, userMessage, maxTokens, timeout) {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
+        const overrides = settings.model ? { model: settings.model } : {};
+        if (settings.thinkingBudget > 0) {
+            overrides.include_reasoning = true;
+            overrides.reasoning_effort = 'high';
+        }
+
         const result = await ConnectionManagerRequestService.sendRequest(
             profileId,
             messages,
@@ -197,7 +256,7 @@ async function callViaProfile(systemPrompt, userMessage, maxTokens, timeout) {
                 includePreset: false,
                 includeInstruct: false,
             },
-            settings.model ? { model: settings.model } : {},
+            overrides,
         );
 
         return {
@@ -616,21 +675,24 @@ async function seedObsidianPatterns() {
 /**
  * Refine a specific message by detecting and replacing slop.
  * @param {number} messageId
+ * @param {boolean} [isManual=false] - True when triggered by slash command or UI button
  */
-async function refineMessage(messageId) {
+async function refineMessage(messageId, isManual = false) {
     const settings = getSettings();
     const message = chat[messageId];
     if (!message || message.is_user || message.is_system) return;
 
     // Guard: already processing
     if (processingMessageId !== null) {
-        if (settings.debugMode) console.log('[SloppySeconds] Skipped — already processing message', processingMessageId);
+        if (isManual) toastr.info('Already processing another message — please wait', 'SloppySeconds');
+        else if (settings.debugMode) console.log('[SloppySeconds] Skipped — already processing message', processingMessageId);
         return;
     }
 
     // Guard: rate limit (2s cooldown)
     if (Date.now() - lastProcessedTimestamp < 2000) {
-        if (settings.debugMode) console.log('[SloppySeconds] Skipped — rate limited');
+        if (isManual) toastr.info('Cooldown active — try again in a moment', 'SloppySeconds');
+        else if (settings.debugMode) console.log('[SloppySeconds] Skipped — rate limited');
         return;
     }
 
@@ -670,14 +732,25 @@ async function refineMessage(messageId) {
         let text = originalText;
         let appliedCount = 0;
 
+        // Locate findings in forward document order, tracking consumed
+        // positions so duplicate substrings resolve to successive matches.
         const located = [];
+        let searchFrom = 0;
         for (const finding of result.findings) {
-            if (!finding.original || !finding.replacement) continue;
-            const idx = text.indexOf(finding.original);
+            if (!finding.original || !finding.replacement) {
+                finding._applied = false;
+                continue;
+            }
+            const idx = text.indexOf(finding.original, searchFrom);
             if (idx !== -1) {
                 located.push({ idx, finding });
-            } else if (settings.debugMode) {
-                console.warn(`[SloppySeconds] Finding not found in text: "${finding.original.substring(0, 50)}..."`);
+                finding._applied = true;
+                searchFrom = idx + finding.original.length;
+            } else {
+                finding._applied = false;
+                if (settings.debugMode) {
+                    console.warn(`[SloppySeconds] Finding not found in text: "${finding.original.substring(0, 50)}..."`);
+                }
             }
         }
 
@@ -793,7 +866,7 @@ function showResultBadge(messageId, fixCount) {
     if (fixCount > 0) {
         const badge = $(`<div class="ss_result_badge ss_has_fixes" title="Click to view changes">${fixCount} fix${fixCount !== 1 ? 'es' : ''}</div>`);
         mesEl.find('.mes_buttons').append(badge);
-    } else {
+    } else if (getSettings().showCleanBadges) {
         mesEl.find('.mes_buttons').append('<div class="ss_result_badge ss_clean" title="No slop found">clean</div>');
     }
 }
@@ -806,17 +879,8 @@ function showFindingsPopup(messageId) {
     const data = message?.extra?.sloppy_seconds;
     if (!data) return;
 
-    let html = `<h3>SloppySeconds — ${data.applied} fix${data.applied !== 1 ? 'es' : ''}</h3>`;
-    html += `<p><em>${escapeHtml(data.summary)}</em></p><hr>`;
-
-    for (const finding of data.findings) {
-        html += `<div class="ss_finding">`;
-        html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}</div>`;
-        html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
-        html += `<div class="ss_finding_replacement"><strong>Replacement:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
-        html += `</div><hr>`;
-    }
-
+    const title = `${data.applied} fix${data.applied !== 1 ? 'es' : ''}`;
+    const html = buildFindingsHtml(title, data.findings, data.summary, { showAppliedStatus: true });
     callGenericPopup(html, POPUP_TYPE.TEXT, '', { wide: true });
 }
 
@@ -852,6 +916,7 @@ function loadSettingsUI() {
     $('#ss_pattern_file').val(s.patternFile);
     $('#ss_custom_patterns').val(s.customPatterns);
     $('#ss_context_ai_messages').val(s.contextAiMessages);
+    $('#ss_show_clean_badges').prop('checked', s.showCleanBadges);
     $('#ss_system_prompt').val(s.systemPrompt);
     $('#ss_debug_mode').prop('checked', s.debugMode);
 
@@ -873,6 +938,10 @@ function bindSettingsEvents() {
         getSettings().obsidianEnabled = $(this).is(':checked');
         saveSettingsDebounced();
         obsidianPatternsLoaded = false; // Force reload
+    });
+    $('#ss_show_clean_badges').on('change', function () {
+        getSettings().showCleanBadges = $(this).is(':checked');
+        saveSettingsDebounced();
     });
     $('#ss_debug_mode').on('change', function () {
         getSettings().debugMode = $(this).is(':checked');
@@ -940,12 +1009,8 @@ function bindSettingsEvents() {
             return;
         }
 
-        // Find last AI message
-        let targetId = -1;
-        for (let i = chat.length - 1; i >= 0; i--) {
-            if (!chat[i].is_user && !chat[i].is_system) { targetId = i; break; }
-        }
-        if (targetId < 0) {
+        const target = findLastAiMessage();
+        if (!target) {
             toastr.info('No AI message found', 'SloppySeconds');
             return;
         }
@@ -959,29 +1024,15 @@ function bindSettingsEvents() {
                 await loadObsidianPatterns();
             }
 
-            const result = await analyzeText(chat[targetId].mes, targetId);
+            const result = await analyzeText(target.message.mes, target.index);
 
             if (!result.findings || result.findings.length === 0) {
                 toastr.success('No slop detected — message is clean!', 'SloppySeconds');
                 return;
             }
 
-            let html = `<h3>SloppySeconds — ${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)</h3>`;
-            html += `<p><em>${escapeHtml(result.summary)}</em></p><hr>`;
-
-            for (const finding of result.findings) {
-                html += `<div class="ss_finding">`;
-                html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}</div>`;
-                html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
-                html += `<div class="ss_finding_replacement"><strong>Suggestion:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
-                html += `</div><hr>`;
-            }
-
-            if (result.newPatterns && result.newPatterns.length > 0) {
-                html += `<h4>New patterns discovered:</h4>`;
-                html += result.newPatterns.map(p => `<div>• ${escapeHtml(p)}</div>`).join('');
-            }
-
+            const title = `${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)`;
+            const html = buildFindingsHtml(title, result.findings, result.summary, { newPatterns: result.newPatterns });
             callGenericPopup(html, POPUP_TYPE.TEXT, '', { wide: true });
         } catch (err) {
             toastr.warning(`Detection failed: ${err.message}`, 'SloppySeconds');
@@ -998,7 +1049,6 @@ function updateConnectionVisibility() {
     const isProfile = settings.connectionMode === 'profile';
     $('#ss_profile_row').toggle(isProfile);
     $('#ss_proxy_row').toggle(!isProfile);
-    $('#ss_thinking_row').toggle(!isProfile); // Thinking only available in proxy mode
 }
 
 function populateProfileDropdown() {
@@ -1102,14 +1152,13 @@ function registerSlashCommands() {
                 toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
                 return '';
             }
-            for (let i = chat.length - 1; i >= 0; i--) {
-                if (!chat[i].is_user && !chat[i].is_system) {
-                    await refineMessage(i);
-                    return `Refined message ${i}`;
-                }
+            const target = findLastAiMessage();
+            if (!target) {
+                toastr.info('No AI message found to refine', 'SloppySeconds');
+                return '';
             }
-            toastr.info('No AI message found to refine', 'SloppySeconds');
-            return '';
+            await refineMessage(target.index, true);
+            return `Refined message ${target.index}`;
         },
         helpString: 'Manually trigger slop detection and refinement on the last AI message.',
         returns: 'Refinement result',
@@ -1123,47 +1172,28 @@ function registerSlashCommands() {
                 toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
                 return '';
             }
-            // Find last AI message
-            let targetId = -1;
-            for (let i = chat.length - 1; i >= 0; i--) {
-                if (!chat[i].is_user && !chat[i].is_system) { targetId = i; break; }
-            }
-            if (targetId < 0) {
+            const target = findLastAiMessage();
+            if (!target) {
                 toastr.info('No AI message found', 'SloppySeconds');
                 return '';
             }
 
             toastr.info('Analyzing for slop...', 'SloppySeconds');
 
-            // Load Obsidian patterns if needed
             if (settings.obsidianEnabled && !obsidianPatternsLoaded) {
                 await loadObsidianPatterns();
             }
 
             try {
-                const result = await analyzeText(chat[targetId].mes, targetId);
+                const result = await analyzeText(target.message.mes, target.index);
 
                 if (!result.findings || result.findings.length === 0) {
                     toastr.success('No slop detected — message is clean!', 'SloppySeconds');
                     return 'Clean';
                 }
 
-                let html = `<h3>SloppySeconds — ${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)</h3>`;
-                html += `<p><em>${escapeHtml(result.summary)}</em></p><hr>`;
-
-                for (const finding of result.findings) {
-                    html += `<div class="ss_finding">`;
-                    html += `<div class="ss_finding_pattern"><strong>Pattern:</strong> ${escapeHtml(finding.pattern || 'unknown')}</div>`;
-                    html += `<div class="ss_finding_original"><strong>Original:</strong> <del>${escapeHtml(finding.original)}</del></div>`;
-                    html += `<div class="ss_finding_replacement"><strong>Suggestion:</strong> <ins>${escapeHtml(finding.replacement)}</ins></div>`;
-                    html += `</div><hr>`;
-                }
-
-                if (result.newPatterns && result.newPatterns.length > 0) {
-                    html += `<h4>New patterns discovered:</h4>`;
-                    html += result.newPatterns.map(p => `<div>• ${escapeHtml(p)}</div>`).join('');
-                }
-
+                const title = `${result.findings.length} finding${result.findings.length !== 1 ? 's' : ''} (detect only, not applied)`;
+                const html = buildFindingsHtml(title, result.findings, result.summary, { newPatterns: result.newPatterns });
                 callGenericPopup(html, POPUP_TYPE.TEXT, '', { wide: true });
                 return `Detected ${result.findings.length} findings`;
             } catch (err) {
@@ -1178,14 +1208,13 @@ function registerSlashCommands() {
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'ss-undo',
         callback: async () => {
-            for (let i = chat.length - 1; i >= 0; i--) {
-                if (chat[i]?.extra?.sloppy_seconds?.original) {
-                    await undoRefinement(i);
-                    return `Undid refinement on message ${i}`;
-                }
+            const target = findLastAiMessage((msg) => !!msg.extra?.sloppy_seconds?.original);
+            if (!target) {
+                toastr.info('No refined message found to undo', 'SloppySeconds');
+                return '';
             }
-            toastr.info('No refined message found to undo', 'SloppySeconds');
-            return '';
+            await undoRefinement(target.index);
+            return `Undid refinement on message ${target.index}`;
         },
         helpString: 'Undo the last SloppySeconds refinement, restoring the original text.',
         returns: 'Undo result',

@@ -70,7 +70,7 @@
                         </label>
                         <input id="ss_max_tokens" type="number" class="text_pole" min="256" max="8192" />
                     </div>
-                    <div id="ss_thinking_row" class="flex1" title="Extended thinking budget in tokens. Higher = more thorough analysis. Set to 0 to disable thinking. Only available in proxy mode.">
+                    <div id="ss_thinking_row" class="flex1" title="Extended thinking budget. In proxy mode, sets exact token budget. In profile mode, enables extended thinking when > 0 (budget managed by backend). Set to 0 to disable.">
                         <label for="ss_thinking_budget">
                             <small>Thinking Budget</small>
                         </label>
@@ -189,6 +189,10 @@
                         </label>
                         <textarea id="ss_system_prompt" class="text_pole" rows="4" placeholder="Leave empty to use the default slop detection prompt..."></textarea>
                     </div>
+                    <label class="checkbox_label" for="ss_show_clean_badges" title="Show a green 'clean' badge on messages that passed slop detection with no findings. Disable to reduce visual noise.">
+                        <input id="ss_show_clean_badges" type="checkbox" class="checkbox">
+                        <span>Show 'clean' badges on messages with no slop</span>
+                    </label>
                     <label class="checkbox_label" for="ss_debug_mode" title="Log detailed pipeline information to the browser console.">
                         <input id="ss_debug_mode" type="checkbox" class="checkbox">
                         <span>Debug mode (console logging)</span>
