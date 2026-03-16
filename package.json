@@ -1,0 +1,15 @@
+{
+    "name": "sillytavern-SloppySeconds",
+    "version": "0.1.0-alpha",
+    "description": "Post-generation prose refiner that detects and rewrites AI slop using Sonnet with extended thinking",
+    "author": "pixelnull",
+    "license": "MIT",
+    "keywords": [
+        "sillytavern",
+        "extension",
+        "prose",
+        "slop",
+        "refiner",
+        "post-processing"
+    ]
+}

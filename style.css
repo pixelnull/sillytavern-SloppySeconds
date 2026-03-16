@@ -1,0 +1,77 @@
+/* SloppySeconds — Status & Indicator Styles */
+
+.ss_status {
+    font-size: 0.85em;
+    margin-left: 8px;
+    line-height: 2em;
+}
+
+/* Processing spinner overlay */
+.ss_spinner {
+    padding: 4px 8px;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    opacity: 0.7;
+    color: var(--SmartThemeQuoteColor, #888);
+}
+
+.ss_spinner i {
+    margin-right: 4px;
+}
+
+/* Result badges */
+.ss_result_badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    margin-left: 4px;
+    border-radius: 8px;
+    font-size: 0.75em;
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.ss_result_badge.ss_has_fixes {
+    background: rgba(255, 152, 0, 0.2);
+    color: #ff9800;
+    cursor: pointer;
+    border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.ss_result_badge.ss_has_fixes:hover {
+    background: rgba(255, 152, 0, 0.35);
+}
+
+.ss_result_badge.ss_clean {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+/* Findings popup */
+.ss_finding {
+    margin: 8px 0;
+    font-size: 0.9em;
+}
+
+.ss_finding_pattern {
+    margin-bottom: 4px;
+    opacity: 0.7;
+}
+
+.ss_finding_original del {
+    background: rgba(244, 67, 54, 0.15);
+    color: #f44336;
+    text-decoration: line-through;
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+.ss_finding_replacement ins {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+    text-decoration: none;
+    padding: 1px 3px;
+    border-radius: 2px;
+}

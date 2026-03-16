@@ -1,0 +1,11 @@
+{
+    "display_name": "SloppySeconds",
+    "loading_order": 102,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "pixelnull",
+    "version": "0.1.0-alpha",
+    "homePage": ""
+}
