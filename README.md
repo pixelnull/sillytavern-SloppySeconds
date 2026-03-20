@@ -82,6 +82,18 @@ SloppySeconds detects seven categories of AI-generated slop (each toggleable in 
 6. **Tell-not-show emotional labels** — "fear gripped him", "a wave of sadness washed over"
 7. **AI-signature constructions** — "[noun] that spoke of [abstract]", "the [noun] hung heavy"
 
+## Built-in Pattern Library
+
+Ships with 104 curated slop patterns across 10 subcategories (dead metaphors, purple prose, hedging, eyes/gaze, voice/speech, physical reactions, emotional telling, AI signatures, narrative tics). Patterns are sourced from:
+
+- [Sukino/SillyTavern Banned Tokens](https://huggingface.co/Sukino/SillyTavern-Settings-and-Presets) — 259 community-curated phrases for roleplay
+- [antislop-sampler](https://github.com/sam-paech/antislop-sampler) — 519 statistically overrepresented LLM phrases
+- [slop-forensics](https://github.com/sam-paech/slop-forensics) — Quantitative analysis of LLM writing vs human baselines
+- [tropes.fyi](https://tropes.fyi/tropes-md) — Structural and tonal LLM writing tropes
+- r/SillyTavern and r/LocalLLaMA community discussions
+
+Add your own via the custom patterns textarea or Obsidian integration. The AI also discovers new patterns automatically during refinement.
+
 ## Obsidian Integration
 
 When enabled, SloppySeconds maintains a pattern file in your Obsidian vault (default: `SloppySeconds/Slop Patterns.md`). New patterns discovered by the AI during refinement are automatically appended, building a growing reference that improves detection over time.
