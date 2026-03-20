@@ -17,11 +17,13 @@ Each finding includes a confidence score and a writing craft explanation so you 
 
 ## Installation
 
-```
-SillyTavern/public/scripts/extensions/third-party/sillytavern-SloppySeconds/
-```
+Use SillyTavern's built-in extension installer:
 
-Clone or symlink into the above path. Restart SillyTavern. No server plugin needed.
+1. Open SillyTavern → Extensions → Install Extension
+2. Paste the Git URL: `https://github.com/pixelnull/sillytavern-SloppySeconds`
+3. Click Install
+
+Or install manually by cloning into `SillyTavern/public/scripts/extensions/third-party/sillytavern-SloppySeconds/`. Restart SillyTavern after. No server plugin needed.
 
 ### Requirements
 
