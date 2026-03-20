@@ -149,6 +149,12 @@ let processingMessageId = null;
 /** Timestamp of last completed refinement (rate limiting) */
 let lastProcessedTimestamp = 0;
 
+/** Increments on every CHAT_CHANGED — stale refinements check this before writing */
+let chatGeneration = 0;
+
+/** Queued message for retry after rate-limit cooldown */
+let pendingRefine = null;
+
 /** Session stats */
 const sessionStats = {
     messagesProcessed: 0,
@@ -239,7 +245,9 @@ async function callViaProfile(systemPrompt, userMessage, maxTokens, timeout) {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-        const overrides = settings.model ? { model: settings.model } : {};
+        // Don't override model in profile mode — let the profile's configured model be used.
+        // Sending e.g. a Claude model name to an OpenAI profile endpoint would fail.
+        const overrides = {};
         if (settings.thinkingBudget > 0) {
             overrides.include_reasoning = true;
             overrides.reasoning_effort = 'high';
@@ -277,27 +285,35 @@ async function callViaProfile(systemPrompt, userMessage, maxTokens, timeout) {
  */
 async function callViaProxy(systemPrompt, userMessage) {
     const settings = getSettings();
+    const controller = new AbortController();
+    // Client-side timeout slightly longer than the server-side proxy timeout
+    const timer = setTimeout(() => controller.abort(), settings.timeout + 5000);
 
-    const response = await fetch(`${PLUGIN_BASE}/analyze`, {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            proxyUrl: settings.proxyUrl,
-            model: settings.model,
-            systemPrompt: systemPrompt,
-            userMessage: userMessage,
-            maxTokens: settings.maxTokens,
-            thinkingBudget: settings.thinkingBudget,
-            timeout: settings.timeout,
-        }),
-    });
+    try {
+        const response = await fetch(`${PLUGIN_BASE}/analyze`, {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal: controller.signal,
+            body: JSON.stringify({
+                proxyUrl: settings.proxyUrl,
+                model: settings.model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                maxTokens: settings.maxTokens,
+                thinkingBudget: settings.thinkingBudget,
+                timeout: settings.timeout,
+            }),
+        });
 
-    if (!response.ok) {
-        const errBody = await response.text().catch(() => '');
-        throw new Error(`Server returned HTTP ${response.status}: ${errBody.substring(0, 200)}`);
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => '');
+            throw new Error(`Server returned HTTP ${response.status}: ${errBody.substring(0, 200)}`);
+        }
+
+        return await response.json();
+    } finally {
+        clearTimeout(timer);
     }
-
-    return await response.json();
 }
 
 /**
@@ -363,6 +379,7 @@ async function analyzeText(proseText, messageId) {
 
         if (!parsed) {
             console.warn('[SloppySeconds] Profile mode returned non-JSON:', result.text.substring(0, 300));
+            toastr.warning('AI returned non-JSON response (profile mode). Check model compatibility.', 'SloppySeconds');
             return { findings: [], newPatterns: [], summary: 'AI returned invalid response' };
         }
 
@@ -440,6 +457,13 @@ async function loadObsidianPatterns() {
             }),
         });
 
+        if (!response.ok) {
+            console.warn(`[SloppySeconds] Obsidian read-patterns failed: HTTP ${response.status}`);
+            obsidianPatterns = [];
+            obsidianPatternsLoaded = true;
+            return;
+        }
+
         const data = await response.json();
         if (!data.ok || !data.content) {
             obsidianPatterns = [];
@@ -486,6 +510,7 @@ async function appendObsidianPatterns(newPatterns) {
                 filename: settings.patternFile,
             }),
         });
+        if (!readResponse.ok) return;
         const readData = await readResponse.json();
 
         const today = new Date().toISOString().split('T')[0];
@@ -517,7 +542,7 @@ async function appendObsidianPatterns(newPatterns) {
         }
 
         // Write back
-        await fetch(`${PLUGIN_BASE}/write-patterns`, {
+        const writeResponse = await fetch(`${PLUGIN_BASE}/write-patterns`, {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({
@@ -528,7 +553,12 @@ async function appendObsidianPatterns(newPatterns) {
             }),
         });
 
-        // Update local cache
+        if (!writeResponse.ok) {
+            console.warn(`[SloppySeconds] Pattern write failed: HTTP ${writeResponse.status}`);
+            return;
+        }
+
+        // Update local cache only after confirmed write
         for (const p of newPatterns) {
             if (!obsidianPatterns.includes(p.toLowerCase())) {
                 obsidianPatterns.push(p.toLowerCase());
@@ -628,7 +658,7 @@ async function seedObsidianPatterns() {
                 content = readData.content.trimEnd() + '\n\n## AI-Discovered\n' + newLines + '\n';
             }
 
-            await fetch(`${PLUGIN_BASE}/write-patterns`, {
+            const wr1 = await fetch(`${PLUGIN_BASE}/write-patterns`, {
                 method: 'POST',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
@@ -638,6 +668,12 @@ async function seedObsidianPatterns() {
                     content: content,
                 }),
             });
+            const wd1 = wr1.ok ? await wr1.json() : null;
+
+            if (!wd1?.ok) {
+                toastr.error(`Failed to write patterns: ${wd1?.error || `HTTP ${wr1.status}`}`, 'SloppySeconds');
+                return;
+            }
 
             toastr.success(`Added ${toAdd.length} new patterns to vault`, 'SloppySeconds');
         } else {
@@ -646,7 +682,7 @@ async function seedObsidianPatterns() {
             const patternLines = discoveredPatterns.map(p => `- ${p}`).join('\n');
             const content = `---\ntags:\n  - sloppy-seconds\n  - sloppy-seconds/patterns\nupdated: ${today}\n---\n# Slop Patterns\n\n## Discovered\n${patternLines}\n`;
 
-            await fetch(`${PLUGIN_BASE}/write-patterns`, {
+            const wr2 = await fetch(`${PLUGIN_BASE}/write-patterns`, {
                 method: 'POST',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
@@ -656,6 +692,12 @@ async function seedObsidianPatterns() {
                     content: content,
                 }),
             });
+            const wd2 = wr2.ok ? await wr2.json() : null;
+
+            if (!wd2?.ok) {
+                toastr.error(`Failed to create pattern file: ${wd2?.error || `HTTP ${wr2.status}`}`, 'SloppySeconds');
+                return;
+            }
 
             toastr.success(`Created pattern file with ${discoveredPatterns.length} patterns`, 'SloppySeconds');
         }
@@ -681,6 +723,7 @@ async function refineMessage(messageId, isManual = false) {
     const settings = getSettings();
     const message = chat[messageId];
     if (!message || message.is_user || message.is_system) return;
+    if (!message.mes?.trim()) return; // Skip empty messages
 
     // Guard: already processing
     if (processingMessageId !== null) {
@@ -689,15 +732,32 @@ async function refineMessage(messageId, isManual = false) {
         return;
     }
 
-    // Guard: rate limit (2s cooldown)
-    if (Date.now() - lastProcessedTimestamp < 2000) {
-        if (isManual) toastr.info('Cooldown active — try again in a moment', 'SloppySeconds');
-        else if (settings.debugMode) console.log('[SloppySeconds] Skipped — rate limited');
+    // Guard: rate limit (2s cooldown) — queue for retry instead of dropping
+    const cooldownRemaining = 2000 - (Date.now() - lastProcessedTimestamp);
+    if (cooldownRemaining > 0) {
+        if (isManual) {
+            toastr.info('Cooldown active — try again in a moment', 'SloppySeconds');
+            return;
+        }
+        // Queue for retry after cooldown expires (only one pending at a time)
+        if (pendingRefine) clearTimeout(pendingRefine.timer);
+        pendingRefine = {
+            messageId,
+            timer: setTimeout(() => {
+                pendingRefine = null;
+                const msg = chat[messageId];
+                if (msg && !msg.is_user && !msg.is_system && !msg.extra?.sloppy_seconds) {
+                    refineMessage(messageId);
+                }
+            }, cooldownRemaining + 100),
+        };
+        if (settings.debugMode) console.log(`[SloppySeconds] Queued message ${messageId} for retry in ${cooldownRemaining}ms`);
         return;
     }
 
     processingMessageId = messageId;
     const originalText = message.mes;
+    const gen = chatGeneration; // Capture — checked after async AI call
 
     try {
         // Show spinner
@@ -714,11 +774,20 @@ async function refineMessage(messageId, isManual = false) {
 
         // Call AI
         const result = await analyzeText(originalText, messageId);
+
+        // Bail if chat changed while we were waiting for AI
+        if (gen !== chatGeneration) {
+            if (settings.debugMode) console.log('[SloppySeconds] Chat changed during refinement — discarding results');
+            return;
+        }
+
         sessionStats.messagesProcessed++;
 
         if (!result.findings || result.findings.length === 0) {
-            // Clean message
+            // Clean message — mark as processed to prevent GENERATION_ENDED double-trigger
             sessionStats.cleanMessages++;
+            message.extra = message.extra || {};
+            message.extra.sloppy_seconds = { findings: [], summary: result.summary || 'Clean', original: null, applied: 0, timestamp: Date.now() };
             showProcessingIndicator(messageId, false);
             showResultBadge(messageId, 0);
             if (settings.debugMode) {
@@ -732,24 +801,41 @@ async function refineMessage(messageId, isManual = false) {
         let text = originalText;
         let appliedCount = 0;
 
-        // Locate findings in forward document order, tracking consumed
-        // positions so duplicate substrings resolve to successive matches.
+        // Pre-locate each finding's position independently (handles out-of-order AI responses),
+        // then sort by document position to resolve duplicates in forward order.
+        const withPositions = result.findings
+            .filter(f => f.original && f.replacement)
+            .map(f => ({ finding: f, idx: text.indexOf(f.original) }))
+            .filter(item => item.idx !== -1);
+        withPositions.sort((a, b) => a.idx - b.idx);
+
+        // Deduplicate overlapping matches — walk forward, skip any that overlap a prior match
         const located = [];
-        let searchFrom = 0;
-        for (const finding of result.findings) {
-            if (!finding.original || !finding.replacement) {
-                finding._applied = false;
-                continue;
-            }
-            const idx = text.indexOf(finding.original, searchFrom);
-            if (idx !== -1) {
-                located.push({ idx, finding });
-                finding._applied = true;
-                searchFrom = idx + finding.original.length;
+        let consumedUntil = 0;
+        for (const item of withPositions) {
+            if (item.idx < consumedUntil) {
+                // Re-search from after last consumed position (handles duplicate substrings)
+                const retryIdx = text.indexOf(item.finding.original, consumedUntil);
+                if (retryIdx !== -1) {
+                    located.push({ idx: retryIdx, finding: item.finding });
+                    item.finding._applied = true;
+                    consumedUntil = retryIdx + item.finding.original.length;
+                } else {
+                    item.finding._applied = false;
+                }
             } else {
+                located.push(item);
+                item.finding._applied = true;
+                consumedUntil = item.idx + item.finding.original.length;
+            }
+        }
+
+        // Mark findings that weren't in withPositions (no match at all)
+        for (const finding of result.findings) {
+            if (finding._applied === undefined) {
                 finding._applied = false;
                 if (settings.debugMode) {
-                    console.warn(`[SloppySeconds] Finding not found in text: "${finding.original.substring(0, 50)}..."`);
+                    console.warn(`[SloppySeconds] Finding not found in text: "${(finding.original || '').substring(0, 50)}..."`);
                 }
             }
         }
@@ -763,7 +849,9 @@ async function refineMessage(messageId, isManual = false) {
         }
 
         if (appliedCount === 0) {
-            // All findings missed — AI hallucinated the originals
+            // All findings missed — mark as processed to prevent double-trigger
+            message.extra = message.extra || {};
+            message.extra.sloppy_seconds = { findings: result.findings, summary: 'All findings missed', original: null, applied: 0, timestamp: Date.now() };
             showProcessingIndicator(messageId, false);
             showResultBadge(messageId, 0);
             if (settings.debugMode) {
@@ -772,12 +860,14 @@ async function refineMessage(messageId, isManual = false) {
             return;
         }
 
-        // Store original for undo and update message
+        // Store original for undo and update message.
+        // Preserve the true original if this is a re-refinement (don't overwrite with intermediate text).
         message.extra = message.extra || {};
+        const trueOriginal = message.extra.sloppy_seconds?.original || originalText;
         message.extra.sloppy_seconds = {
             findings: result.findings,
             summary: result.summary,
-            original: originalText,
+            original: trueOriginal,
             applied: appliedCount,
             timestamp: Date.now(),
         };
@@ -819,6 +909,11 @@ async function refineMessage(messageId, isManual = false) {
  * @param {number} messageId
  */
 async function undoRefinement(messageId) {
+    if (processingMessageId === messageId) {
+        toastr.warning('Cannot undo while this message is being refined', 'SloppySeconds');
+        return;
+    }
+
     const message = chat[messageId];
     if (!message?.extra?.sloppy_seconds?.original) {
         toastr.info('No refinement to undo on this message', 'SloppySeconds');
@@ -858,13 +953,18 @@ function showProcessingIndicator(messageId, show) {
 
 /**
  * Show a result badge on a message.
+ * Uses message.send_date as a stable key so badge clicks resolve correctly
+ * even after message deletion/reorder shifts array indices.
  */
 function showResultBadge(messageId, fixCount) {
     const mesEl = $(`.mes[mesid="${messageId}"]`);
     mesEl.find('.ss_result_badge').remove();
 
+    const message = chat[messageId];
+    const msgKey = message?.send_date || messageId;
+
     if (fixCount > 0) {
-        const badge = $(`<div class="ss_result_badge ss_has_fixes" title="Click to view changes">${fixCount} fix${fixCount !== 1 ? 'es' : ''}</div>`);
+        const badge = $(`<div class="ss_result_badge ss_has_fixes" data-ss-key="${msgKey}" title="Click to view changes">${fixCount} fix${fixCount !== 1 ? 'es' : ''}</div>`);
         mesEl.find('.mes_buttons').append(badge);
     } else if (getSettings().showCleanBadges) {
         mesEl.find('.mes_buttons').append('<div class="ss_result_badge ss_clean" title="No slop found">clean</div>');
@@ -940,8 +1040,10 @@ function bindSettingsEvents() {
         obsidianPatternsLoaded = false; // Force reload
     });
     $('#ss_show_clean_badges').on('change', function () {
-        getSettings().showCleanBadges = $(this).is(':checked');
+        const checked = $(this).is(':checked');
+        getSettings().showCleanBadges = checked;
         saveSettingsDebounced();
+        if (!checked) $('.ss_result_badge.ss_clean').remove();
     });
     $('#ss_debug_mode').on('change', function () {
         getSettings().debugMode = $(this).is(':checked');
@@ -994,7 +1096,7 @@ function bindSettingsEvents() {
     }
 
     // Test buttons
-    $('#ss_test_proxy').on('click', testProxyConnection);
+    $('#ss_test_proxy').on('click', testAiConnection);
     $('#ss_test_obsidian').on('click', testObsidianConnection);
     $('#ss_seed_patterns').on('click', seedObsidianPatterns);
 
@@ -1002,6 +1104,10 @@ function bindSettingsEvents() {
     $('#ss_analyze_btn').on('click', async function () {
         const btn = $(this);
         if (btn.hasClass('disabled')) return;
+        if (processingMessageId !== null) {
+            toastr.info('A refinement is in progress — please wait', 'SloppySeconds');
+            return;
+        }
 
         const settings = getSettings();
         if (!settings.enabled) {
@@ -1077,34 +1183,46 @@ function populateProfileDropdown() {
     }
 }
 
-async function testProxyConnection() {
+async function testAiConnection() {
     const settings = getSettings();
     const statusEl = $('#ss_proxy_status');
     statusEl.text('Testing...').css('color', '');
 
     try {
-        const response = await fetch(`${PLUGIN_BASE}/test`, {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                proxyUrl: settings.proxyUrl,
-                model: settings.model,
-            }),
-        });
-
-        if (!response.ok) {
-            statusEl.text(`Server plugin not loaded (HTTP ${response.status}). Restart SillyTavern.`).css('color', '#f44336');
-            return;
-        }
-
-        const data = await response.json();
-        if (data.ok) {
-            statusEl.text('Connected!').css('color', '#4caf50');
+        if (settings.connectionMode === 'profile') {
+            // Test via Connection Manager profile
+            const result = await callViaProfile(
+                'You are a test endpoint. Respond with exactly: {"status":"ok"}',
+                'Test connection. Respond with exactly: {"status":"ok"}',
+                32,
+                10000,
+            );
+            statusEl.text('Profile connected!').css('color', '#4caf50');
         } else {
-            statusEl.text(`Failed: ${data.error}`).css('color', '#f44336');
+            // Test via server plugin proxy
+            const response = await fetch(`${PLUGIN_BASE}/test`, {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    proxyUrl: settings.proxyUrl,
+                    model: settings.model,
+                }),
+            });
+
+            if (!response.ok) {
+                statusEl.text(`Server plugin not loaded (HTTP ${response.status}). Restart SillyTavern.`).css('color', '#f44336');
+                return;
+            }
+
+            const data = await response.json();
+            if (data.ok) {
+                statusEl.text('Connected!').css('color', '#4caf50');
+            } else {
+                statusEl.text(`Failed: ${data.error}`).css('color', '#f44336');
+            }
         }
     } catch (err) {
-        statusEl.text(`Error: ${err.message}`).css('color', '#f44336');
+        statusEl.text(`Failed: ${err.message}`).css('color', '#f44336');
     }
 }
 
@@ -1167,6 +1285,10 @@ function registerSlashCommands() {
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'ss-detect',
         callback: async () => {
+            if (processingMessageId !== null) {
+                toastr.info('A refinement is in progress — please wait', 'SloppySeconds');
+                return '';
+            }
             const settings = getSettings();
             if (!settings.enabled) {
                 toastr.warning('SloppySeconds is disabled', 'SloppySeconds');
@@ -1293,8 +1415,9 @@ jQuery(async function () {
             await refineMessage(messageId);
         };
 
-        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-            autoRefineHandler(messageId, 'CHARACTER_MESSAGE_RENDERED');
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId, type) => {
+            if (type === 'first_message') return; // Skip character greetings
+            autoRefineHandler(messageId, 'CHARACTER_MESSAGE_RENDERED').catch(err => console.error('[SloppySeconds] Auto-refine error:', err));
         });
 
         // Fallback: GENERATION_ENDED fires when the stop button is hidden
@@ -1302,21 +1425,31 @@ jQuery(async function () {
         // may be skipped on error paths).
         eventSource.on(event_types.GENERATION_ENDED, () => {
             const lastIdx = chat.length - 1;
-            if (lastIdx >= 0 && !chat[lastIdx]?.is_user) {
-                autoRefineHandler(lastIdx, 'GENERATION_ENDED');
+            if (lastIdx < 0) return;
+            if (!chat[lastIdx]?.is_user) {
+                autoRefineHandler(lastIdx, 'GENERATION_ENDED').catch(err => console.error('[SloppySeconds] Auto-refine error:', err));
             }
         });
 
         // Re-inject badges on chat load
         eventSource.on(event_types.CHAT_CHANGED, () => {
             obsidianPatternsLoaded = false; // Reload patterns on chat change
-            setTimeout(injectBadgesOnLoad, 100);
+            chatGeneration++;               // Invalidate in-flight refinements
+            processingMessageId = null;     // Allow new refinements
+            if (pendingRefine) {
+                clearTimeout(pendingRefine.timer);
+                pendingRefine = null;
+            }
+            $('.ss_result_badge').remove();  // Clear all stale badges
+            setTimeout(injectBadgesOnLoad, 300);
         });
 
-        // Click handler for result badges (event delegation)
+        // Click handler for result badges — resolve by send_date key, not mesid
         $(document).on('click', '.ss_result_badge.ss_has_fixes', function () {
-            const messageId = $(this).closest('.mes').attr('mesid');
-            if (messageId !== undefined) showFindingsPopup(parseInt(messageId, 10));
+            const msgKey = $(this).data('ss-key');
+            if (!msgKey) return;
+            const idx = chat.findIndex(m => m?.send_date == msgKey);
+            if (idx >= 0) showFindingsPopup(idx);
         });
 
         console.log('[SloppySeconds] Client extension initialized');

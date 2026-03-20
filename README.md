@@ -19,7 +19,7 @@ After every AI message, SloppySeconds:
 - **Extended thinking**: Uses Sonnet's thinking mode for thorough analysis
 - **Surgical edits**: Only rewrites the bad parts, preserving voice and style
 - **Growing pattern list**: AI discovers new slop patterns and saves them to Obsidian
-- **Undo support**: Every refinement can be undone with `/refine-undo`
+- **Undo support**: Every refinement can be undone with `/ss-undo`
 - **Dual connection**: Proxy mode (with thinking) or ST Connection Manager profiles
 - **Visual indicators**: Spinner during processing, badges showing fix counts
 - **Findings viewer**: Click any badge to see exactly what was changed and why
@@ -54,17 +54,18 @@ Restart SillyTavern after installation.
    - **Proxy mode** (recommended): Enter your proxy URL (e.g., `http://localhost:42069`)
    - **Profile mode**: Select a Connection Manager profile
 4. Set the model (default: `claude-sonnet-4-20250514`)
-5. Adjust thinking budget (default: 10,000 tokens)
+5. Adjust thinking budget (default: 10,000 tokens). **Note:** In profile mode, the thinking budget acts as a toggle — any value > 0 enables thinking, but the exact budget is managed by the backend.
 6. **Optional**: Enable Obsidian integration for persistent pattern learning
 
 ## Slash Commands
 
 | Command | Description |
 |---------|-------------|
-| `/refine` | Manually trigger refinement on the last AI message |
-| `/refine-undo` | Undo the last refinement (restore original text) |
-| `/refine-status` | Show session statistics |
-| `/refine-patterns` | Show all active slop patterns |
+| `/ss-refine` | Manually trigger refinement on the last AI message |
+| `/ss-detect` | Detect slop without applying changes (shows findings popup) |
+| `/ss-undo` | Undo the last refinement (restore original text) |
+| `/ss-status` | Show session statistics |
+| `/ss-patterns` | Show all active slop patterns |
 
 ## Slop Categories
 
