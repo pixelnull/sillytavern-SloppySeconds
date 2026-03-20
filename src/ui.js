@@ -2,9 +2,9 @@
 // UI Indicators & Helpers
 // ============================================================================
 
-import { chat } from '../../../../script.js';
-import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../popup.js';
-import { escapeHtml } from '../../../utils.js';
+import { chat } from '../../../../../script.js';
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../../../popup.js';
+import { escapeHtml } from '../../../../utils.js';
 import { getSettings } from '../settings.js';
 
 /**

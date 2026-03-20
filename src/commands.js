@@ -2,11 +2,11 @@
 // Slash Commands
 // ============================================================================
 
-import { chat } from '../../../../script.js';
-import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
-import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
-import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
-import { escapeHtml } from '../../../utils.js';
+import { chat } from '../../../../../script.js';
+import { SlashCommandParser } from '../../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../../slash-commands/SlashCommand.js';
+import { callGenericPopup, POPUP_TYPE } from '../../../../popup.js';
+import { escapeHtml } from '../../../../utils.js';
 import { getSettings } from '../settings.js';
 import { processingMessageId, setProcessingMessageId, chatGeneration, sessionStats, obsidianPatterns, obsidianPatternsLoaded } from './state.js';
 import { refineMessage, undoRefinement } from './refine.js';

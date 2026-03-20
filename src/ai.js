@@ -2,8 +2,8 @@
 // AI Connection & Analysis
 // ============================================================================
 
-import { chat, name2 } from '../../../../script.js';
-import { ConnectionManagerRequestService } from '../../shared.js';
+import { chat, name2 } from '../../../../../script.js';
+import { ConnectionManagerRequestService } from '../../../shared.js';
 import { getSettings, DEFAULT_SYSTEM_PROMPT } from '../settings.js';
 import { sessionStats } from './state.js';
 import { callViaCorsBridge } from './proxy-api.js';

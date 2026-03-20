@@ -6,7 +6,7 @@ import {
     chat,
     saveChatConditional,
     updateMessageBlock,
-} from '../../../../script.js';
+} from '../../../../../script.js';
 import { getSettings } from '../settings.js';
 import {
     processingMessageId, setProcessingMessageId,

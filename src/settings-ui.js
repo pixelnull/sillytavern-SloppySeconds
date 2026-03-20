@@ -2,9 +2,9 @@
 // Settings UI
 // ============================================================================
 
-import { saveSettingsDebounced } from '../../../../script.js';
-import { ConnectionManagerRequestService } from '../../shared.js';
-import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
+import { ConnectionManagerRequestService } from '../../../shared.js';
+import { callGenericPopup, POPUP_TYPE } from '../../../../popup.js';
 import { getSettings, defaultSettings } from '../settings.js';
 import {
     processingMessageId,
