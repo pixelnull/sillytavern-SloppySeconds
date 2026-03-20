@@ -68,7 +68,7 @@
                         <label for="ss_max_tokens">
                             <small>Max Response Tokens</small>
                         </label>
-                        <input id="ss_max_tokens" type="number" class="text_pole" min="256" max="8192" />
+                        <input id="ss_max_tokens" type="number" class="text_pole" min="256" max="65536" />
                     </div>
                     <div id="ss_thinking_row" class="flex1" title="Extended thinking budget. In proxy mode, sets exact token budget. In profile mode, enables extended thinking when > 0 (budget managed by backend). Set to 0 to disable.">
                         <label for="ss_thinking_budget">
@@ -155,7 +155,16 @@
                 </div>
                 <div class="inline-drawer-content">
                     <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">
-                        Built-in patterns are always active. Add custom patterns below (one per line). AI-discovered patterns are stored in Obsidian if enabled.
+                        Toggle which slop categories to detect. Add custom patterns below (one per line). AI-discovered patterns are stored in Obsidian if enabled.
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px;">
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="cliche" checked> <small>Cliches</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="purple-prose" checked> <small>Purple Prose</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="hedging" checked> <small>Hedging</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="repetition" checked> <small>Repetition</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="cross-message" checked> <small>Cross-Message</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="tell-not-show" checked> <small>Tell-not-Show</small></label>
+                        <label class="checkbox_label" style="flex: 0 0 auto;"><input type="checkbox" class="checkbox ss_category_toggle" data-category="ai-signature" checked> <small>AI Signature</small></label>
                     </div>
                     <div class="flex-container flexFlowColumn">
                         <label for="ss_custom_patterns">
@@ -182,6 +191,23 @@
                             </label>
                             <input id="ss_context_ai_messages" type="number" class="text_pole" min="1" max="20" />
                         </div>
+                        <div class="flex1" title="How to handle AI messages in group chats. 'All' refines every AI character's messages. 'None' disables auto-refine in group chats.">
+                            <label for="ss_refine_group">
+                                <small>Group Chat Refinement</small>
+                            </label>
+                            <select id="ss_refine_group" class="text_pole">
+                                <option value="all">Refine all characters</option>
+                                <option value="none">Disabled in group chats</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex-container">
+                        <div class="flex1" title="Findings below this confidence level (0.0-1.0) are shown in the popup but NOT auto-applied. Lower = more aggressive. Default: 0.7">
+                            <label for="ss_confidence_threshold">
+                                <small>Auto-Apply Confidence Threshold</small>
+                            </label>
+                            <input id="ss_confidence_threshold" type="number" class="text_pole" min="0" max="1" step="0.05" />
+                        </div>
                     </div>
                     <div class="flex-container flexFlowColumn">
                         <label for="ss_system_prompt">
@@ -205,11 +231,13 @@
             <!-- Slash Commands Reference -->
             <div style="font-size: 0.85em; opacity: 0.7;">
                 <strong>Slash Commands:</strong>
-                <code>/ss-refine</code> — Apply fixes &nbsp;|&nbsp;
+                <code>/ss-refine [n]</code> — Apply fixes &nbsp;|&nbsp;
                 <code>/ss-detect</code> — Detect only &nbsp;|&nbsp;
                 <code>/ss-undo</code> — Undo last &nbsp;|&nbsp;
                 <code>/ss-status</code> — Stats &nbsp;|&nbsp;
-                <code>/ss-patterns</code> — Show patterns
+                <code>/ss-patterns</code> — Show patterns &nbsp;|&nbsp;
+                <code>/ss-health</code> — Health check &nbsp;|&nbsp;
+                <code>/ss-batch [n]</code> — Batch refine
             </div>
         </div>
     </div>

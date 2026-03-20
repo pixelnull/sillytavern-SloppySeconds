@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.1-alpha (2026-03-19)
+
+### Bug Fixes (5-Paradigm Audit)
+- **CRITICAL:** Default `thinkingBudget` (10000) exceeded `maxTokens` (4096) — Anthropic API rejected every thinking-enabled request. Fixed defaults to `maxTokens: 16384` and added runtime guard to auto-clamp.
+- **CRITICAL:** Removed dead server plugin (`SillyTavern/plugins/SloppySeconds/`). Plugin ID was mixed-case (`SloppySeconds`) which failed ST's lowercase-only validation — plugin never loaded. All routes were dead code since v0.3.0 moved to CORS bridge.
+- **Fixed:** `response.text()` consumed twice on 404 in CORS bridge — second read threw `TypeError` or returned empty string, losing error info
+- **Fixed:** `CHAT_CHANGED` reset `processingMessageId` while refinement was in-flight, allowing the old `finally` block to clobber a new refinement's lock — removed premature reset, `chatGeneration` check handles it
+- **Fixed:** Failed refinement didn't set `sloppy_seconds` marker — `GENERATION_ENDED` would re-trigger the same message, creating an infinite retry loop against broken proxies
+- **Fixed:** Fence-fallback JSON.parse in `callViaProxy` not wrapped in try/catch — raw `SyntaxError` escaped instead of descriptive error
+- **Fixed:** `callViaProfile()` sent OpenAI-specific `include_reasoning`/`reasoning_effort` overrides to all backends — now only applies to OpenAI-compatible profiles
+- **Fixed:** Settings version drift — `slopPatterns` array was stuck at install-time values, new patterns added in updates never picked up. Added migration via `settingsVersion`.
+- **Fixed:** Obsidian pattern regex truncated patterns containing parentheses — `(.+?)` stopped at first `(`. Now uses greedy match with explicit suffix stripping.
+- **Fixed:** Stale badges persisted after swipe/regeneration — now listens for `MESSAGE_SWIPED` to clear `sloppy_seconds` data and badge DOM
+- **Fixed:** `_applied` internal flag persisted to chat JSON — now stripped before saving
+- **Fixed:** Clean/zero-applied messages not saved to disk — `sloppy_seconds` marker set in memory but `saveChatConditional()` not called, causing wasted re-analysis on reload
+- **Fixed:** Spinner not removed when refinement discarded due to chat change during AI call
+- **Fixed:** Inconsistent date formats in Obsidian frontmatter `updated` field — standardized to date-only
+- **Fixed:** Number inputs displayed stale "abc" text when NaN — now resets to default value
+- **Fixed:** `JSON.parse` in `testObsidianConnection` could throw confusing error on malformed 200 response
+- **Fixed:** Path traversal validation missed trailing `/..` pattern
+- **Fixed:** `GENERATION_ENDED` handler ignored emitted `chat.length` parameter, computed index independently
+
+### Removed
+- Deleted `SillyTavern/plugins/SloppySeconds/` server plugin entirely (dead code since v0.3.0)
+- Removed unreachable `ok:false` check in `analyzeText` proxy path
+
+## 0.3.0-alpha (2025-03-19)
+
+### Breaking Changes
+- **Removed server plugin dependency.** All communication is now client-side. The `server/` directory has been deleted — you can remove `SillyTavern/plugins/SloppySeconds/` entirely.
+- Obsidian REST API calls now go directly from the browser (same pattern as DeepLore Enhanced).
+- AI proxy calls now route through SillyTavern's built-in CORS proxy at `/proxy/:url(*)`.
+- **Requires** `enableCorsProxy: true` in `config.yaml` for proxy AI connection mode. Profile mode is unaffected.
+
+### Improvements
+- Simplified installation — no more copying `server/` to `SillyTavern/plugins/`
+- Eliminated server-side error handling surface — all errors are now client-side with clear user feedback
+- CORS proxy disabled detection — shows specific error message directing user to enable it
+
+---
+
 ## 0.2.0-alpha (2025-03-19)
 
 ### Bug Fixes (Round 1)

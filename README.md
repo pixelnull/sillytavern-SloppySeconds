@@ -28,23 +28,17 @@ After every AI message, SloppySeconds:
 
 - [SillyTavern](https://github.com/SillyTavern/SillyTavern) (latest staging)
 - An Anthropic-compatible API endpoint (claude-code-proxy or direct API)
+- `enableCorsProxy: true` in SillyTavern's `config.yaml` (required for proxy AI connection mode)
 - **Optional**: [Obsidian](https://obsidian.md/) + [Local REST API plugin](https://github.com/coddingtonbear/obsidian-local-rest-api) for pattern persistence
 
 ## Installation
 
-### Client Extension
-Copy or symlink `sillytavern-SloppySeconds/` into:
+Clone or symlink `sillytavern-SloppySeconds/` into:
 ```
 SillyTavern/public/scripts/extensions/third-party/sillytavern-SloppySeconds/
 ```
 
-### Server Plugin
-Copy or symlink `sillytavern-SloppySeconds/server/` into:
-```
-SillyTavern/plugins/SloppySeconds/
-```
-
-Restart SillyTavern after installation.
+Restart SillyTavern after installation. No server plugin needed.
 
 ## Configuration
 

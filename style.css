@@ -75,3 +75,55 @@
     padding: 1px 3px;
     border-radius: 2px;
 }
+
+/* Before/After diff view */
+.ss_diff_section {
+    margin-top: 12px;
+}
+
+.ss_diff_section summary {
+    cursor: pointer;
+    padding: 6px 0;
+    user-select: none;
+}
+
+.ss_diff_container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.ss_diff_pane {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 0.85em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ss_diff_label {
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 6px;
+}
+
+.ss_diff_removed {
+    background: rgba(244, 67, 54, 0.2);
+    color: #f44336;
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+.ss_diff_added {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    padding: 1px 3px;
+    border-radius: 2px;
+}
