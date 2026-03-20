@@ -213,38 +213,57 @@ export async function seedObsidianPatterns() {
     }
 
     const discoveredPatterns = [
-        // Structural Templates
+        // Structural Templates (from slop-forensics)
         'the particular X of someone who Y',
         'the way X does/moves Y',
         'not X exactly, but Y',
         'something between X and Y',
         // Dead Metaphors (Pauses/Silence)
-        'the silence stretched',
         'the word landed',
         'the question landed',
         'the room settled',
-        'the hallway settled',
         'sat in the air',
-        // Emotional Telling
-        'caught it',
-        'registered',
-        'read the room',
+        // Emotional Telling (advanced)
         'something moved behind her eyes',
-        'the body\'s delayed invoice',
-        // Architecture Metaphor Overuse
-        'the architecture of',
-        'load-bearing',
-        'two buildings by the same architect',
-        // Character-Specific Tics
-        'the ceremony taught her',
-        'the ceremony couldn\'t reach',
-        'ceremony as emotional processing',
-        // Blood/Feeding Clichés
-        'blood catching light like',
-        'blood came away in sheets',
-        // Nautical Empire Metaphor
-        'the ship was righting',
-        'the ship was listing',
+        'the air between them shifted',
+        'a flicker of something unreadable',
+        'something unspoken passed between',
+        'her expression softened by degrees',
+        // Atmosphere (from Sukino Banned Tokens)
+        'the air was thick with',
+        'dust motes dancing',
+        'casting long shadows across',
+        'the atmosphere was charged',
+        'dimly lit',
+        'the din of the crowd',
+        'nestled deep within',
+        // Physical Cliches (from antislop-sampler)
+        'arched spine',
+        'nails rake angry red lines',
+        'waggles eyebrows',
+        'smirk playing on',
+        'looking like the cat that got the cream',
+        'like a predator stalking',
+        'towers over',
+        'cold and calculating',
+        'with each slow, deliberate movement',
+        'dance as old as time',
+        'sways hypnotically',
+        // Voice Cliches (from Sukino)
+        'barely a whisper',
+        'voice barely audible',
+        'husky whispers',
+        'words turn into a purr',
+        'rasped',
+        'whispering words of passion',
+        // Narrative Filler (from tropes.fyi)
+        'life would never be the same',
+        'everything changed',
+        'the night is still young',
+        'for now, that was enough',
+        'lay ahead',
+        'perhaps, just perhaps',
+        'but whatever happens',
     ];
 
     try {
