@@ -26,13 +26,13 @@
 
             <div class="flex-container flexFlowColumn">
                 <div class="flex-container">
-                    <div class="flex1" title="Connection mode: Proxy routes through the server plugin (supports thinking). Profile uses ST Connection Manager.">
+                    <div class="flex1" title="Connection mode: Profile uses ST Connection Manager (works with any provider). Proxy routes through ST's CORS proxy to an Anthropic-compatible endpoint (supports thinking budget control).">
                         <label for="ss_connection_mode">
                             <small>Connection Mode</small>
                         </label>
                         <select id="ss_connection_mode" class="text_pole">
-                            <option value="proxy">Proxy (recommended)</option>
-                            <option value="profile">Profile (Connection Manager)</option>
+                            <option value="profile">Profile (recommended)</option>
+                            <option value="proxy">Proxy (Anthropic API)</option>
                         </select>
                     </div>
                     <div class="flex1" title="Model identifier for the AI. Default: claude-sonnet-4-20250514">

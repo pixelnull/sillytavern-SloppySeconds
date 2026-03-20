@@ -28,16 +28,16 @@ Or install manually by cloning into `SillyTavern/public/scripts/extensions/third
 ### Requirements
 
 - SillyTavern (latest staging)
-- An Anthropic-compatible API endpoint or any model via ST Connection Manager
-- `enableCorsProxy: true` in `config.yaml` (for proxy mode only)
+- Any AI model via ST Connection Manager profile (Anthropic, OpenAI, OpenRouter, local, etc.)
+- **Optional:** `enableCorsProxy: true` in `config.yaml` (only needed for proxy connection mode)
 - **Optional:** [Obsidian](https://obsidian.md/) + [Local REST API plugin](https://github.com/coddingtonbear/obsidian-local-rest-api) for pattern persistence
 
 ## Setup
 
 1. Extensions → SloppySeconds → Enable
 2. Pick a connection mode:
-   - **Proxy** (recommended): Point at any Anthropic-compatible endpoint (e.g. `http://localhost:42069`). Supports extended thinking.
-   - **Profile**: Use any ST Connection Manager profile. Works with OpenAI, OpenRouter, local models — anything that returns JSON.
+   - **Profile** (recommended): Select any ST Connection Manager profile. Works with Anthropic, OpenAI, OpenRouter, local models — anything that returns JSON.
+   - **Proxy**: Point at any Anthropic-compatible endpoint (e.g. `http://localhost:42069`). Supports extended thinking budget control. Requires `enableCorsProxy: true` in `config.yaml`.
 3. Hit "Test AI Connection" to verify
 4. Optional: Enable Obsidian integration for persistent pattern learning
 
@@ -111,8 +111,8 @@ Three layers of patterns merge at runtime:
 
 | Mode | Thinking | Setup | Best For |
 |------|----------|-------|----------|
-| **Proxy** | Full budget control | `enableCorsProxy: true` + proxy URL | Anthropic API, claude-code-proxy |
-| **Profile** | Backend-managed | Select any CM profile | OpenAI, OpenRouter, local models |
+| **Profile** (default) | Backend-managed | Select any CM profile | Any provider — Anthropic, OpenAI, OpenRouter, local models |
+| **Proxy** | Full budget control | `enableCorsProxy: true` + proxy URL | Direct Anthropic API, claude-code-proxy |
 
 ## Architecture
 

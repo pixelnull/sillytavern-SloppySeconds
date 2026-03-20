@@ -10,7 +10,7 @@ export const defaultSettings = {
     autoRefine: true,
 
     // Connection
-    connectionMode: 'proxy',        // 'proxy' | 'profile'
+    connectionMode: 'profile',       // 'profile' | 'proxy'
     proxyUrl: 'http://localhost:42069',
     profileId: '',
     model: 'claude-sonnet-4-20250514',
