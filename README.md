@@ -1,118 +1,132 @@
 # SloppySeconds
 
-A SillyTavern extension that automatically detects and rewrites AI-generated "slop" — cliched, repetitive, and purple prose patterns — using Claude Sonnet with extended thinking.
+A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that catches AI-generated slop after every message and surgically rewrites it. Dead metaphors, purple prose, hedging, repetition, emotional telling, AI-signature constructions — the patterns that make AI writing sound like AI writing.
 
 The second pass catches what the first one missed.
 
-## What It Does
+## How It Works
 
-After every AI message, SloppySeconds:
+Every time the AI generates a message, SloppySeconds sends the prose through a second AI pass that:
 
-1. **Detects** slop patterns (dead metaphors, purple prose, filler, echo/repetition, tell-not-show, AI-signature constructions)
-2. **Rewrites** only the flagged bits — minimal surgical edits, not a full rewrite
-3. **Replaces** the message in-place (with undo support)
-4. **Learns** new patterns over time via Obsidian vault integration
+1. Scans against 104 known slop patterns (community-sourced, see below)
+2. Compares against recent chat history to catch cross-message repetition
+3. Identifies and surgically replaces only the bad phrases — not a rewrite, a cleanup
+4. Stores the original for instant undo
 
-## Features
-
-- **Auto-refine**: Runs automatically after every AI message (toggleable)
-- **Extended thinking**: Uses Sonnet's thinking mode for thorough analysis
-- **Surgical edits**: Only rewrites the bad parts, preserving voice and style
-- **Confidence filtering**: Low-confidence findings shown but not auto-applied (configurable threshold)
-- **7 toggleable categories**: Cliches, purple prose, hedging, repetition, cross-message, tell-not-show, AI signatures
-- **Growing pattern list**: AI discovers new slop patterns and saves them to Obsidian
-- **Selective undo**: Click a badge to see findings, uncheck individual fixes to revert while keeping others
-- **Before/after diff view**: Collapsible side-by-side comparison with highlighted changes
-- **Batch refinement**: Refine multiple past messages at once with `/ss-batch`
-- **Dual connection**: Proxy mode (with thinking) or ST Connection Manager profiles
-- **Group chat support**: Refine all characters or disable auto-refine in groups
-- **Visual indicators**: Spinner during processing, badges showing fix counts, writing craft explanations
-- **Retry with backoff**: Transient errors automatically retry (429, 5xx, timeouts)
-- **Health check**: `/ss-health` validates your entire configuration end-to-end
-- **Cost tracking**: `/ss-status` shows token usage, estimated cost, and success rate
-
-## Requirements
-
-- [SillyTavern](https://github.com/SillyTavern/SillyTavern) (latest staging)
-- An Anthropic-compatible API endpoint (claude-code-proxy or direct API)
-- `enableCorsProxy: true` in SillyTavern's `config.yaml` (required for proxy AI connection mode)
-- **Optional**: [Obsidian](https://obsidian.md/) + [Local REST API plugin](https://github.com/coddingtonbear/obsidian-local-rest-api) for pattern persistence
+Each finding includes a confidence score and a writing craft explanation so you can learn what makes it slop and why the replacement is better.
 
 ## Installation
 
-Clone or symlink `sillytavern-SloppySeconds/` into:
 ```
 SillyTavern/public/scripts/extensions/third-party/sillytavern-SloppySeconds/
 ```
 
-Restart SillyTavern after installation. No server plugin needed.
+Clone or symlink into the above path. Restart SillyTavern. No server plugin needed.
 
-## Configuration
+### Requirements
 
-1. Open SillyTavern settings → Extensions → SloppySeconds
-2. Enable the extension
-3. Configure your AI connection:
-   - **Proxy mode** (recommended): Enter your proxy URL (e.g., `http://localhost:42069`)
-   - **Profile mode**: Select a Connection Manager profile
-4. Set the model (default: `claude-sonnet-4-20250514`)
-5. Adjust thinking budget (default: 10,000 tokens). **Note:** In profile mode, the thinking budget acts as a toggle — any value > 0 enables thinking, but the exact budget is managed by the backend.
-6. **Optional**: Enable Obsidian integration for persistent pattern learning
+- SillyTavern (latest staging)
+- An Anthropic-compatible API endpoint or any model via ST Connection Manager
+- `enableCorsProxy: true` in `config.yaml` (for proxy mode only)
+- **Optional:** [Obsidian](https://obsidian.md/) + [Local REST API plugin](https://github.com/coddingtonbear/obsidian-local-rest-api) for pattern persistence
+
+## Setup
+
+1. Extensions → SloppySeconds → Enable
+2. Pick a connection mode:
+   - **Proxy** (recommended): Point at any Anthropic-compatible endpoint (e.g. `http://localhost:42069`). Supports extended thinking.
+   - **Profile**: Use any ST Connection Manager profile. Works with OpenAI, OpenRouter, local models — anything that returns JSON.
+3. Hit "Test AI Connection" to verify
+4. Optional: Enable Obsidian integration for persistent pattern learning
+
+## Features
+
+### Core
+- **Auto-refine** on every AI message (toggleable)
+- **Extended thinking** for thorough analysis (proxy mode)
+- **Surgical edits** — only the flagged phrases change, everything else stays
+- **Instant undo** — `/ss-undo` or click the badge
+
+### Detection
+- **104 built-in patterns** across 10 categories, community-sourced (see Pattern Library below)
+- **7 toggleable categories**: cliches, purple prose, hedging, repetition, cross-message, tell-not-show, AI signatures
+- **Cross-message detection** using recent chat context — catches the AI repeating itself across messages
+- **Confidence scoring** — low-confidence findings shown but not auto-applied (threshold configurable)
+
+### Review & Control
+- **Findings popup** — click any badge to see every change with before/after, pattern category, confidence %, and craft explanation
+- **Selective revert** — uncheck individual fixes to revert them while keeping others
+- **Before/after diff view** — collapsible side-by-side with highlighted changes
+- **Batch refinement** — `/ss-batch 10` to refine the last 10 unrefined messages
+
+### Reliability
+- **Retry with backoff** — transient errors (429, 5xx, timeouts) retry automatically
+- **Streaming guard** — won't refine incomplete messages during streaming
+- **Chat switch protection** — discards stale results if you switch chats during analysis
+- **Swipe protection** — detects content changes and bails gracefully
+
+### Obsidian Integration
+- Maintains a growing pattern file in your vault (default: `SloppySeconds/Slop Patterns.md`)
+- AI-discovered patterns automatically appended after each refinement
+- Seed command writes curated starter patterns to your vault
+- Patterns merge with built-in + custom lists (deduplicated, case-insensitive)
+
+### Monitoring
+- **Cost tracking** — `/ss-status` shows input/output tokens, estimated cost, success rate
+- **Health check** — `/ss-health` validates AI connection, Obsidian, token budgets, patterns
+- **Debug mode** — detailed console logging for troubleshooting
 
 ## Slash Commands
 
 | Command | Description |
 |---------|-------------|
-| `/ss-refine [n]` | Manually trigger refinement (optionally on message index N) |
-| `/ss-detect` | Detect slop without applying changes (shows findings popup) |
-| `/ss-undo` | Undo the last refinement (restore original text) |
-| `/ss-batch [n]` | Batch refine the last N unrefined AI messages (default: 5) |
-| `/ss-status` | Show session statistics, token usage, and estimated cost |
-| `/ss-patterns` | Show all active slop patterns |
-| `/ss-health` | Run configuration health check |
+| `/ss-refine [n]` | Refine last AI message (or message at index N) |
+| `/ss-detect` | Detect only — show findings without applying |
+| `/ss-undo` | Undo the last refinement |
+| `/ss-batch [n]` | Batch refine last N unrefined messages (default: 5) |
+| `/ss-status` | Session stats, token usage, estimated cost |
+| `/ss-patterns` | Show all active patterns |
+| `/ss-health` | Configuration health check |
 
-## Slop Categories
+## Pattern Library
 
-SloppySeconds detects seven categories of AI-generated slop (each toggleable in settings):
-
-1. **Dead metaphors & cliches** — "a testament to", "the air crackled", "a symphony of"
-2. **Purple prose & melodrama** — "ministrations", "orbs" (for eyes), "pupils blown wide"
-3. **Filler & hedging** — "couldn't help but", "found herself [verb]ing", "something akin to"
-4. **Echo/repetition** — Same word/phrase/structure used too close together
-5. **Cross-message repetition** — Patterns repeated across multiple AI messages (uses chat context)
-6. **Tell-not-show emotional labels** — "fear gripped him", "a wave of sadness washed over"
-7. **AI-signature constructions** — "[noun] that spoke of [abstract]", "the [noun] hung heavy"
-
-## Built-in Pattern Library
-
-Ships with 104 curated slop patterns across 10 subcategories (dead metaphors, purple prose, hedging, eyes/gaze, voice/speech, physical reactions, emotional telling, AI signatures, narrative tics). Patterns are sourced from:
+Ships with 104 curated slop patterns sourced from:
 
 - [Sukino/SillyTavern Banned Tokens](https://huggingface.co/Sukino/SillyTavern-Settings-and-Presets) — 259 community-curated phrases for roleplay
 - [antislop-sampler](https://github.com/sam-paech/antislop-sampler) — 519 statistically overrepresented LLM phrases
-- [slop-forensics](https://github.com/sam-paech/slop-forensics) — Quantitative analysis of LLM writing vs human baselines
-- [tropes.fyi](https://tropes.fyi/tropes-md) — Structural and tonal LLM writing tropes
+- [slop-forensics](https://github.com/sam-paech/slop-forensics) — quantitative LLM vs human writing analysis
+- [tropes.fyi](https://tropes.fyi/tropes-md) — structural and tonal LLM tropes
 - r/SillyTavern and r/LocalLLaMA community discussions
 
-Add your own via the custom patterns textarea or Obsidian integration. The AI also discovers new patterns automatically during refinement.
+Patterns are organized into 10 subcategories: dead metaphors, purple prose, hedging/filler, eyes/gaze, voice/speech, physical reactions, emotional telling, AI signatures, narrative tics, and cross-message repetition.
 
-## Obsidian Integration
+Three layers of patterns merge at runtime:
+1. **Built-in** (104 defaults, updated via settings migration)
+2. **Custom** (user textarea, one per line)
+3. **Obsidian** (vault file, auto-updated with AI discoveries)
 
-When enabled, SloppySeconds maintains a pattern file in your Obsidian vault (default: `SloppySeconds/Slop Patterns.md`). New patterns discovered by the AI during refinement are automatically appended, building a growing reference that improves detection over time.
+## Connection Modes
 
-## How It Works
+| Mode | Thinking | Setup | Best For |
+|------|----------|-------|----------|
+| **Proxy** | Full budget control | `enableCorsProxy: true` + proxy URL | Anthropic API, claude-code-proxy |
+| **Profile** | Backend-managed | Select any CM profile | OpenAI, OpenRouter, local models |
+
+## Architecture
 
 ```
-AI generates message
-  → CHARACTER_MESSAGE_RENDERED or GENERATION_ENDED fires
-  → Guards: streaming check, lock check, cooldown check, group chat check
-  → Loads merged patterns (built-in + custom + Obsidian)
-  → Builds chat context (recent AI messages for cross-message detection)
-  → Sends prose + patterns + context to AI with thinking enabled
-  → AI returns JSON: { findings[], newPatterns[], summary }
-  → Filters by confidence threshold (low-confidence shown but not applied)
-  → Applies find/replace with overlap deduplication and position tracking
-  → Stores original for undo, persists applied/confidence status per finding
-  → Updates Obsidian pattern list with new discoveries
-  → Shows badge with fix count (click for full findings + diff view)
+index.js              Entry point (~150 lines): init, events, badge handler
+settings.js           Settings, defaults, migration, system prompt
+src/
+  state.js            Centralized mutable state + setters
+  ai.js               AI connection (profile + proxy), chat context, analysis
+  refine.js           Refinement pipeline: replace, undo, selective revert
+  patterns.js         Pattern merging, Obsidian load/append/seed
+  ui.js               Badges, spinners, findings popup, diff view
+  commands.js         All /ss-* slash commands
+  settings-ui.js      Settings panel wiring + validation
+  proxy-api.js        CORS bridge for Anthropic API
+  obsidian-api.js     Direct browser → Obsidian REST API
 ```
 
 ## License
