@@ -18,11 +18,18 @@ After every AI message, SloppySeconds:
 - **Auto-refine**: Runs automatically after every AI message (toggleable)
 - **Extended thinking**: Uses Sonnet's thinking mode for thorough analysis
 - **Surgical edits**: Only rewrites the bad parts, preserving voice and style
+- **Confidence filtering**: Low-confidence findings shown but not auto-applied (configurable threshold)
+- **7 toggleable categories**: Cliches, purple prose, hedging, repetition, cross-message, tell-not-show, AI signatures
 - **Growing pattern list**: AI discovers new slop patterns and saves them to Obsidian
-- **Undo support**: Every refinement can be undone with `/ss-undo`
+- **Selective undo**: Click a badge to see findings, uncheck individual fixes to revert while keeping others
+- **Before/after diff view**: Collapsible side-by-side comparison with highlighted changes
+- **Batch refinement**: Refine multiple past messages at once with `/ss-batch`
 - **Dual connection**: Proxy mode (with thinking) or ST Connection Manager profiles
-- **Visual indicators**: Spinner during processing, badges showing fix counts
-- **Findings viewer**: Click any badge to see exactly what was changed and why
+- **Group chat support**: Refine all characters or disable auto-refine in groups
+- **Visual indicators**: Spinner during processing, badges showing fix counts, writing craft explanations
+- **Retry with backoff**: Transient errors automatically retry (429, 5xx, timeouts)
+- **Health check**: `/ss-health` validates your entire configuration end-to-end
+- **Cost tracking**: `/ss-status` shows token usage, estimated cost, and success rate
 
 ## Requirements
 
@@ -55,22 +62,25 @@ Restart SillyTavern after installation. No server plugin needed.
 
 | Command | Description |
 |---------|-------------|
-| `/ss-refine` | Manually trigger refinement on the last AI message |
+| `/ss-refine [n]` | Manually trigger refinement (optionally on message index N) |
 | `/ss-detect` | Detect slop without applying changes (shows findings popup) |
 | `/ss-undo` | Undo the last refinement (restore original text) |
-| `/ss-status` | Show session statistics |
+| `/ss-batch [n]` | Batch refine the last N unrefined AI messages (default: 5) |
+| `/ss-status` | Show session statistics, token usage, and estimated cost |
 | `/ss-patterns` | Show all active slop patterns |
+| `/ss-health` | Run configuration health check |
 
 ## Slop Categories
 
-SloppySeconds detects six categories of AI-generated slop:
+SloppySeconds detects seven categories of AI-generated slop (each toggleable in settings):
 
 1. **Dead metaphors & cliches** — "a testament to", "the air crackled", "a symphony of"
 2. **Purple prose & melodrama** — "ministrations", "orbs" (for eyes), "pupils blown wide"
 3. **Filler & hedging** — "couldn't help but", "found herself [verb]ing", "something akin to"
 4. **Echo/repetition** — Same word/phrase/structure used too close together
-5. **Tell-not-show emotional labels** — "fear gripped him", "a wave of sadness washed over"
-6. **AI-signature constructions** — "[noun] that spoke of [abstract]", "the [noun] hung heavy"
+5. **Cross-message repetition** — Patterns repeated across multiple AI messages (uses chat context)
+6. **Tell-not-show emotional labels** — "fear gripped him", "a wave of sadness washed over"
+7. **AI-signature constructions** — "[noun] that spoke of [abstract]", "the [noun] hung heavy"
 
 ## Obsidian Integration
 
@@ -80,13 +90,17 @@ When enabled, SloppySeconds maintains a pattern file in your Obsidian vault (def
 
 ```
 AI generates message
-  → CHARACTER_MESSAGE_RENDERED event fires
-  → SloppySeconds loads merged patterns (built-in + custom + Obsidian)
-  → Sends prose + patterns to Sonnet with extended thinking
-  → Sonnet analyzes, returns JSON: { findings[], newPatterns[], summary }
-  → Applies find/replace for each finding (surgical, first-occurrence only)
-  → Stores original for undo in message metadata
+  → CHARACTER_MESSAGE_RENDERED or GENERATION_ENDED fires
+  → Guards: streaming check, lock check, cooldown check, group chat check
+  → Loads merged patterns (built-in + custom + Obsidian)
+  → Builds chat context (recent AI messages for cross-message detection)
+  → Sends prose + patterns + context to AI with thinking enabled
+  → AI returns JSON: { findings[], newPatterns[], summary }
+  → Filters by confidence threshold (low-confidence shown but not applied)
+  → Applies find/replace with overlap deduplication and position tracking
+  → Stores original for undo, persists applied/confidence status per finding
   → Updates Obsidian pattern list with new discoveries
+  → Shows badge with fix count (click for full findings + diff view)
 ```
 
 ## License

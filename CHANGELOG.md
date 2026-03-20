@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.4.0-alpha (2026-03-19)
+
+### Architecture
+- **Decomposed monolithic `index.js`** (~1480 lines) into 9 focused `src/` modules: `state.js`, `ai.js`, `refine.js`, `pipeline.js` → `patterns.js`, `ui.js`, `commands.js`, `settings-ui.js`, `proxy-api.js`, `obsidian-api.js`
+- Entry point `index.js` now ~150 lines (init, event wiring, badge click handler only)
+- Extracted `settings.js` with `getSettings()`, `defaultSettings`, `DEFAULT_SYSTEM_PROMPT`, and settings migration logic
+- Centralized all mutable state in `src/state.js` with explicit setter functions
+
+### New Features
+- **Confidence threshold** (`autoApplyThreshold`): Findings below threshold shown in popup but not auto-applied (default: 0.7)
+- **Pattern categories**: 7 toggleable slop categories (cliche, purple-prose, hedging, repetition, cross-message, tell-not-show, ai-signature)
+- **Group chat support**: `refineGroupMessages` setting — refine all characters or disable in groups
+- **Batch refinement** (`/ss-batch [n]`): Refine last N unrefined AI messages sequentially with rate limiting
+- **Health check** (`/ss-health`): Validates AI connection, Obsidian, token budgets, and patterns
+- **Selective revert**: Popup shows checkboxes per finding — uncheck to revert individual fixes while keeping others
+- **Before/After diff view**: Collapsible side-by-side diff in findings popup with highlighted changes
+- **Streaming guard**: Tracks `STREAM_TOKEN_RECEIVED` to avoid refining incomplete messages during streaming
+- **Retry with backoff**: Transient errors (429, 5xx, timeout) retry up to 2x with exponential delay (3s, 8s)
+- **Cost dashboard** (`/ss-status`): Shows input/output token breakdown, estimated cost, failure rate
+- **Writing craft explanations**: Each finding includes a 1-sentence explanation of why it's slop
+- **Message index argument**: `/ss-refine 5` to refine a specific message by index
+- **Settings validation**: Inline warnings for invalid URLs, token budget conflicts, port ranges
+
+### Bug Fixes (6-Paradigm Audit — 23 bugs)
+- **HIGH:** OK button in findings popup triggered accidental undo (popup result collision with POPUP_RESULT.AFFIRMATIVE) — custom buttons now use result values 10/11
+- **HIGH:** Swipe during in-flight refinement poisoned `sloppy_seconds` data with stale results, permanently blocking auto-refine on new swipe — now detects content change after AI call
+- **HIGH:** Retry after transient error used stale numeric messageId instead of re-resolving via `send_date` — wrong message refined if array shifted during delay
+- **HIGH:** Batch command captured indices upfront that went stale during multi-minute operation — now stores `send_date` and re-resolves per iteration, plus bails on `chatGeneration` change
+- **HIGH:** `_applied` flag stripped before persist made popup show checkboxes on non-applied findings — now persists explicit `applied`/`lowConfidence` booleans
+- **HIGH:** Selective revert read checkbox DOM after popup close animation removed it — now captures state before popup resolves
+- **HIGH:** Spinner orphaned at original DOM position when message index shifted during async AI call — now tracks `originalMesId` for cleanup
+- **HIGH:** Settings migration crashed if `slopPatterns` corrupted to non-array — now guards with `Array.isArray()` reset
+- **MEDIUM:** `_lowConfidence` internal flag leaked into persisted chat JSON — now stripped alongside `_applied`
+- **MEDIUM:** Selective revert didn't mark findings as reverted — popup showed stale checkboxes on re-open
+- **MEDIUM:** Batch over-reported processed count (incremented before `refineMessage` which could bail on lock)
+- **MEDIUM:** Concurrent `appendObsidianPatterns` TOCTOU — read-modify-write race lost patterns from first writer. Now serialized with promise lock
+- **MEDIUM:** `buildDiffHtml` only highlighted first occurrence of repeated findings — now uses `replaceAll()`
+- **MEDIUM:** `$` characters in finding text garbled diff view via replacement patterns — now uses function replacer
+- **MEDIUM:** Badge `data-ss-key` attribute interpolated unsafely — now uses jQuery `.attr()`
+- **MEDIUM:** Badge click produced `NaN` for string-format `send_date` values — now handles both numeric and string comparison
+- **MEDIUM:** HTML `max="8192"` on token input contradicted default `maxTokens: 16384` — updated to 65536
+- **LOW:** `seedObsidianPatterns` didn't accept HTTP 201 (unlike `appendObsidianPatterns`)
+- **LOW:** `/ss-detect` ran without acquiring processing lock — could run concurrent with auto-refine
+- **LOW:** Concurrent `loadObsidianPatterns` calls fired duplicate HTTP requests — now deduplicated with shared promise
+- **LOW:** Undo/revert vulnerable to chat switch while popup open — now validates `chatGeneration` and re-resolves index
+- **LOW:** Non-string entries in `slopPatterns` array crashed `.trim()` — now type-guarded
+- **LOW:** Null/empty entries in AI `newPatterns` crashed `toLowerCase()` — now filtered
+
+### Test Suite
+- Added `tests.mjs` with 94 unit tests covering: vault path encoding/validation, pattern merging, confidence filtering, text replacement engine, findings cleanup, selective revert, settings migration, chat context building, and edge case regression tests
+- Run with `node tests.mjs`
+
+### Removed
+- Deleted `server/index.js` and `server/core/obsidian.js` (dead code since v0.3.0)
+
+---
+
 ## 0.3.1-alpha (2026-03-19)
 
 ### Bug Fixes (5-Paradigm Audit)
